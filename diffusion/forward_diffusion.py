@@ -59,7 +59,7 @@ def get_vars_from_schedule(schedule, timesteps=300):
     # giving us a closed form solution
     posterior_variance = betas * (1. - alphas_cumprod_prev) / (1. - alphas_cumprod)
 
-    return sqrt_alphas_cumprod, sqrt_recip_alphas, sqrt_one_minus_alphas_cumprod, posterior_variance
+    return betas, sqrt_alphas_cumprod, sqrt_recip_alphas, sqrt_one_minus_alphas_cumprod, posterior_variance
 
 
 def extract(a, t, x_shape):

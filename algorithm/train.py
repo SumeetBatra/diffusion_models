@@ -1,4 +1,5 @@
 import torch
+import os
 
 from pathlib import Path
 from torch.optim import Adam
@@ -6,7 +7,7 @@ from torchvision.utils import save_image
 from models.unet import num_to_groups, Unet
 from dataset.pytorch_dataset import dataloader
 from losses.loss_functions import p_losses
-from diffusion.forward_diffusion import get_vars_from_schedule, cosine_beta_schedule
+from diffusion.forward_diffusion import get_vars_from_schedule, cosine_beta_schedule, linear_beta_schedule
 from sampling.sampler import sample
 
 
@@ -14,6 +15,9 @@ def train():
     results_folder = Path("./results")
     results_folder.mkdir(exist_ok=True)
     save_and_sample_every = 1000
+
+    model_checkpoint_folder = Path('./checkpoints')
+    model_checkpoint_folder.mkdir(exist_ok=True)
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -33,7 +37,7 @@ def train():
     epochs = 6
 
     timesteps = 300
-    sqrt_alphas_cumprod, sqrt_recip_alphas, sqrt_one_minus_alphas_cumprod, posterior_variance = get_vars_from_schedule(cosine_beta_schedule, timesteps=timesteps)
+    betas, sqrt_alphas_cumprod, sqrt_recip_alphas, sqrt_one_minus_alphas_cumprod, posterior_variance = get_vars_from_schedule(linear_beta_schedule, timesteps=timesteps)
 
     for epoch in range(epochs):
         for step, batch in enumerate(dataloader):
@@ -54,14 +58,26 @@ def train():
             optimizer.step()
 
             # save generated images
-            # save generated images
             if step != 0 and step % save_and_sample_every == 0:
+                print('Sampling...')
                 milestone = step // save_and_sample_every
                 batches = num_to_groups(4, batch_size)
-                all_images_list = list(map(lambda n: sample(model, batch_size=n, channels=channels), batches))
-                all_images = torch.cat(all_images_list, dim=0)
+                all_images_list = list(map(lambda n: sample(model,
+                                                            image_size=image_size,
+                                                            batch_size=n,
+                                                            channels=channels,
+                                                            timesteps=timesteps,
+                                                            betas=betas,
+                                                            sqrt_recip_alphas=sqrt_recip_alphas,
+                                                            sqrt_one_minus_alphas_cumprod=sqrt_one_minus_alphas_cumprod,
+                                                            posterior_variance=posterior_variance),
+                                           batches))
+                all_images = torch.cat(all_images_list[0], dim=0)
                 all_images = (all_images + 1) * 0.5
                 save_image(all_images, str(results_folder / f'sample-{milestone}.png'), nrow=6)
+
+    print('Saving final model checkpoint...')
+    torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), 'model_cp.pt'))
 
 
 

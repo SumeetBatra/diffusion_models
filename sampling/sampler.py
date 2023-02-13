@@ -34,7 +34,7 @@ def p_sample(model, x, t, t_index, betas, sqrt_recip_alphas, sqrt_one_minus_alph
 
 # algorithm 2 (including returning all images)
 @torch.no_grad()
-def p_sample_loop(model, shape, timesteps, sqrt_recip_alphas, sqrt_one_minus_alphas_cumprod, posterior_variance):
+def p_sample_loop(model, shape, timesteps, betas, sqrt_recip_alphas, sqrt_one_minus_alphas_cumprod, posterior_variance):
     device = next(model.parameters()).device
 
     b = shape[0]
@@ -44,16 +44,17 @@ def p_sample_loop(model, shape, timesteps, sqrt_recip_alphas, sqrt_one_minus_alp
 
     for i in tqdm(reversed(range(0, timesteps)), desc='sampling loop time step', total=timesteps):
         img = p_sample(model, img, torch.full((b, ), i, device=device, dtype=torch.long), i,
-                       sqrt_recip_alphas, sqrt_one_minus_alphas_cumprod, posterior_variance)
-        imgs.append(img.cpu().numpy())
+                       betas, sqrt_recip_alphas, sqrt_one_minus_alphas_cumprod, posterior_variance)
+        imgs.append(img.cpu())
 
     return imgs
 
 
-def sample(model, image_size, timesteps, sqrt_recip_alphas, sqrt_one_minus_alphas_cumprod, posterior_variance, batch_size=16, channels=3):
+def sample(model, image_size, timesteps, betas, sqrt_recip_alphas, sqrt_one_minus_alphas_cumprod, posterior_variance, batch_size=16, channels=3):
     return p_sample_loop(model,
                          shape=(batch_size, channels, image_size, image_size),
                          timesteps=timesteps,
+                         betas=betas,
                          sqrt_recip_alphas=sqrt_recip_alphas,
                          sqrt_one_minus_alphas_cumprod=sqrt_one_minus_alphas_cumprod,
                          posterior_variance=posterior_variance)
