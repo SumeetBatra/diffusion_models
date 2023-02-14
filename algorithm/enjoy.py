@@ -1,9 +1,8 @@
 import torch
 import matplotlib.pyplot as plt
 
-from sampling.sampler import sample
 from models.unet import Unet
-from diffusion.forward_diffusion import cosine_beta_schedule, linear_beta_schedule, get_vars_from_schedule
+from diffusion.gaussian_diffusion import cosine_beta_schedule, linear_beta_schedule, GaussianDiffusion
 
 def visualize_generated_images(model_path):
     image_size = 28
@@ -22,14 +21,14 @@ def visualize_generated_images(model_path):
     model.load_state_dict(torch.load(model_path))
     model = model.to(device)
 
-    betas, sqrt_alphas_cumprod, sqrt_recip_alphas, sqrt_one_minus_alphas_cumprod, posterior_variance = get_vars_from_schedule(
-        linear_beta_schedule, timesteps=timesteps)
+    betas = linear_beta_schedule(timesteps)
+    gauss_diff = GaussianDiffusion(betas, num_timesteps=timesteps)
 
     random_idx = torch.randint(0, 64, (1,))
     print(f'{random_idx=}')
 
     # sample 64 images
-    samples = sample(model, image_size, timesteps, betas, sqrt_recip_alphas, sqrt_one_minus_alphas_cumprod, posterior_variance, batch_size=64, channels=channels)
+    samples = gauss_diff.sample(model, image_size, batch_size=64, channels=channels)
 
     plt.imshow(samples[-1][random_idx].reshape(image_size, image_size, channels), cmap="gray")
     plt.show()

@@ -7,8 +7,7 @@ from torchvision.utils import save_image
 from models.unet import num_to_groups, Unet
 from dataset.pytorch_dataset import dataloader
 from losses.loss_functions import p_losses
-from diffusion.forward_diffusion import get_vars_from_schedule, cosine_beta_schedule, linear_beta_schedule
-from sampling.sampler import sample
+from diffusion.gaussian_diffusion import GaussianDiffusion, cosine_beta_schedule, linear_beta_schedule
 
 
 def train():
@@ -37,7 +36,8 @@ def train():
     epochs = 6
 
     timesteps = 300
-    betas, sqrt_alphas_cumprod, sqrt_recip_alphas, sqrt_one_minus_alphas_cumprod, posterior_variance = get_vars_from_schedule(linear_beta_schedule, timesteps=timesteps)
+    betas = linear_beta_schedule(timesteps)
+    gauss_diff = GaussianDiffusion(betas, num_timesteps=timesteps)
 
     for epoch in range(epochs):
         for step, batch in enumerate(dataloader):
@@ -49,7 +49,7 @@ def train():
             # Algorithm 1 line 3: sample t uniformally for every example in the batch
             t = torch.randint(0, timesteps, (batch_size,), device=device).long()
 
-            loss = p_losses(model, batch, t, sqrt_alphas_cumprod=sqrt_alphas_cumprod, sqrt_one_minus_alphas_cumprod=sqrt_one_minus_alphas_cumprod, loss_type='huber')
+            loss = p_losses(model, batch, t, gauss_diff, loss_type='huber')
 
             if step % 100 == 0:
                 print(f'Loss: {loss.item()}')
@@ -62,15 +62,10 @@ def train():
                 print('Sampling...')
                 milestone = step // save_and_sample_every
                 batches = num_to_groups(4, batch_size)
-                all_images_list = list(map(lambda n: sample(model,
+                all_images_list = list(map(lambda n: gauss_diff.sample(model,
                                                             image_size=image_size,
                                                             batch_size=n,
-                                                            channels=channels,
-                                                            timesteps=timesteps,
-                                                            betas=betas,
-                                                            sqrt_recip_alphas=sqrt_recip_alphas,
-                                                            sqrt_one_minus_alphas_cumprod=sqrt_one_minus_alphas_cumprod,
-                                                            posterior_variance=posterior_variance),
+                                                            channels=channels),
                                            batches))
                 all_images = torch.cat(all_images_list[0], dim=0)
                 all_images = (all_images + 1) * 0.5
