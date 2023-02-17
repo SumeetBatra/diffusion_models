@@ -18,6 +18,12 @@ def grad_norm(model):
     return np.sqrt(sqsum)
 
 
+def estimate_component_wise_variance(batch):
+    mu = batch.sum() / np.prod(batch.shape)
+    var = (batch - mu).square().sum() / np.prod(batch.shape)
+    return var
+
+
 def train():
     results_folder = Path("./results")
     results_folder.mkdir(exist_ok=True)
@@ -65,7 +71,11 @@ def train():
             batch = batch['pixel_values'].to(device)
 
             with torch.no_grad():
-                latent_batch = autoencoder.encoder(batch)
+                latent_batch = autoencoder.encode(batch).sample()
+                # rescale the embeddings to be unit variance
+                var = estimate_component_wise_variance(latent_batch)
+                std = torch.sqrt(var)
+                latent_batch /= std
 
             # Algorithm 1 line 3: sample t uniformally for every example in the batch
             t = torch.randint(0, timesteps, (batch_size,), device=device).long()
