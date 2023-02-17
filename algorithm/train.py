@@ -6,7 +6,7 @@ from pathlib import Path
 from torch.optim import AdamW
 from torchvision.utils import save_image
 from models.unet import num_to_groups, Unet
-from dataset.pytorch_dataset import dataloader
+from dataset.mnist_fashion_dataset import dataloader
 from diffusion.gaussian_diffusion import GaussianDiffusion, cosine_beta_schedule, linear_beta_schedule
 
 
