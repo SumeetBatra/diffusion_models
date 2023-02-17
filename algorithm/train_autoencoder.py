@@ -6,6 +6,7 @@ from pathlib import Path
 from torch.optim import Adam
 from autoencoders.conv_autoencoder import AutoEncoder
 from dataset.mnist_fashion_dataset import dataloader
+from losses.loss_functions import normal_kl
 
 
 def grad_norm(model):
@@ -22,7 +23,8 @@ def train_autoencoder():
 
     optimizer = Adam(model.parameters(), lr=1e-3)
 
-    loss_func = torch.nn.MSELoss()
+    mse_loss_func = torch.nn.MSELoss()
+    kl_loss_coef = 1e-6
 
     model_checkpoint_folder = Path('./checkpoints')
     model_checkpoint_folder.mkdir(exist_ok=True)
@@ -37,8 +39,8 @@ def train_autoencoder():
             batch_size = batch['pixel_values'].shape[0]
             batch = batch['pixel_values'].to(device)
 
-            out = model(batch)
-            loss = loss_func(batch, out)
+            img_out, posterior = model(batch)
+            loss = mse_loss_func(batch, img_out) + kl_loss_coef * posterior.kl().mean()
 
             loss.backward()
             if step % 100 == 0:

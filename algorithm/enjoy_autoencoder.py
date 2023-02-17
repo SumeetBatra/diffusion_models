@@ -16,7 +16,8 @@ def enjoy():
     random_idx = torch.randint(0, 10000, (1,))
     input = batch[random_idx]['pixel_values'][0]
     input = input.to(device)
-    output = model(input).detach().cpu()
+    output, _ = model(input.unsqueeze(0))
+    output = output.detach().cpu()
     input = input.detach().cpu()
 
     fig, (ax1, ax2) = plt.subplots(1, 2)
