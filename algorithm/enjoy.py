@@ -8,7 +8,7 @@ def visualize_generated_images(model_path):
     image_size = 28
     channels = 1
     batch_size = 128
-    timesteps = 300
+    timesteps = 600
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -21,7 +21,7 @@ def visualize_generated_images(model_path):
     model.load_state_dict(torch.load(model_path))
     model = model.to(device)
 
-    betas = linear_beta_schedule(timesteps)
+    betas = cosine_beta_schedule(timesteps)
     gauss_diff = GaussianDiffusion(betas, num_timesteps=timesteps)
 
     random_idx = torch.randint(0, 64, (1,))

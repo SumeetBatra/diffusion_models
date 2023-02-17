@@ -246,7 +246,7 @@ class Unet(nn.Module):
             dim_mults=(1, 2, 4, 8),
             channels=3,
             with_time_emb=True,
-            resnet_block_groups=8,
+            resnet_block_groups=1,
             use_convnext=True,
             convnext_mult=2,
     ):
@@ -317,7 +317,8 @@ class Unet(nn.Module):
                 )
             )
 
-        out_dim = default(out_dim, channels)
+        # out_dim = default(out_dim, channels)
+        out_dim = 2 * channels  # because now our model predicts noise mean and variance
         self.final_conv = nn.Sequential(
             block_klass(dim, dim), nn.Conv2d(dim, out_dim, 1)
         )
