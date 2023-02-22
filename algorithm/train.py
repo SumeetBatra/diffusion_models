@@ -9,6 +9,7 @@ from models.unet import num_to_groups, Unet
 from autoencoders.conv_autoencoder import AutoEncoder
 from dataset.mnist_fashion_dataset import dataloader
 from diffusion.gaussian_diffusion import GaussianDiffusion, cosine_beta_schedule, linear_beta_schedule
+from diffusion.latent_diffusion import LatentDiffusion
 
 
 def grad_norm(model):
@@ -56,13 +57,14 @@ def train():
     autoencoder.to(device)
     autoencoder.eval()
 
-    optimizer = AdamW(model.parameters(), lr=1e-3)
+    optimizer = AdamW(model.parameters(), lr=1e-4)
 
     epochs = 6
 
     timesteps = 600
     betas = cosine_beta_schedule(timesteps)
-    gauss_diff = GaussianDiffusion(betas, num_timesteps=timesteps)
+    gauss_diff = LatentDiffusion(betas, num_timesteps=timesteps, device=device)
+    scale_factor = 1.0
     for epoch in range(epochs):
         for step, batch in enumerate(dataloader):
             optimizer.zero_grad()
@@ -71,19 +73,19 @@ def train():
             batch = batch['pixel_values'].to(device)
 
             with torch.no_grad():
-                latent_batch = autoencoder.encode(batch).sample()
-                # rescale the embeddings to be unit variance
-                var = estimate_component_wise_variance(latent_batch)
-                std = torch.sqrt(var)
-                latent_batch /= std
+                latent_batch = autoencoder.encode(batch).sample().detach()
+                # rescale the embeddings to be unit variance -- on first batch only
+                if epoch == 0 and step == 0:
+                    print("Calculating scale factor...")
+                    std = latent_batch.flatten().std()
+                    scale_factor = 1. / std
+                latent_batch *= scale_factor
 
             # Algorithm 1 line 3: sample t uniformally for every example in the batch
             t = torch.randint(0, timesteps, (batch_size,), device=device).long()
 
-            # loss = p_losses(model, batch, t, gauss_diff, loss_type='huber')
             losses = gauss_diff.compute_training_losses(model, latent_batch, t)
             loss = losses.mean()
-
 
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)

@@ -317,8 +317,8 @@ class Unet(nn.Module):
                 )
             )
 
-        # out_dim = default(out_dim, channels)
-        out_dim = 2 * channels  # because now our model predicts noise mean and variance
+        out_dim = default(out_dim, channels)
+        # out_dim = 2 * channels  # because now our model predicts noise mean and variance
         self.final_conv = nn.Sequential(
             block_klass(dim, dim), nn.Conv2d(dim, out_dim, 1)
         )

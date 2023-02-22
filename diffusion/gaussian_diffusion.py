@@ -44,36 +44,37 @@ class GaussianDiffusion:
     Class for forward and reverse diffusion process
     '''
 
-    def __init__(self, betas, num_timesteps):
+    def __init__(self, betas, num_timesteps, device):
         self.betas = betas
         self.num_timesteps = num_timesteps
+        self.device = device
 
         # variables that will be reused later i.e. to calculate noise at intermediate timesteps etc.
 
         # define alphas
-        alphas = 1. - betas
-        alphas_cumprod = torch.cumprod(alphas, axis=0)
-        alphas_cumprod_prev = F.pad(alphas_cumprod[:-1], (1, 0), value=1.0)
-        self.sqrt_recip_alphas = torch.sqrt(1.0 / alphas)
+        self.alphas = 1. - betas
+        self.alphas_cumprod = torch.cumprod(self.alphas, axis=0)
+        alphas_cumprod_prev = F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0)
+        self.sqrt_recip_alphas = torch.sqrt(1.0 / self.alphas)
 
         # calculations for diffusion q(x_t | x_{t-1}) and others
-        self.sqrt_alphas_cumprod = torch.sqrt(alphas_cumprod)
-        self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1. - alphas_cumprod)
+        self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
+        self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1. - self.alphas_cumprod)
 
         # calculations for posterior q(x_{t-1} | x_t, x_0)
         # we can compute this directly for any intermediate timestep b/c sum of gaussians is gaussian,
         # giving us a closed form solution
-        self.posterior_variance = betas * (1. - alphas_cumprod_prev) / (1. - alphas_cumprod)
+        self.posterior_variance = betas * (1. - alphas_cumprod_prev) / (1. - self.alphas_cumprod)
         # variance is 0 at beginning of diffusion chain so we "clip" it by replacing the 0th index with the 1st
         self.posterior_log_variance_clipped = torch.log(torch.cat((self.posterior_variance[1].view(-1, 1), self.posterior_variance[1:].view(-1, 1))).squeeze())
 
         # equation 11 first term in improved DDPM
-        self.posterior_mean_coef1 = betas * torch.sqrt(alphas_cumprod_prev) / (1.0 - alphas_cumprod)
+        self.posterior_mean_coef1 = betas * torch.sqrt(alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
         # equation 11 second term in Improved DDPMs
-        self.posterior_mean_coef2 = (1.0 - alphas_cumprod_prev) * torch.sqrt(alphas) / (1.0 - alphas_cumprod)
+        self.posterior_mean_coef2 = (1.0 - alphas_cumprod_prev) * torch.sqrt(self.alphas) / (1.0 - self.alphas_cumprod)
 
-        self.sqrt_recip_alphas_cumprod = torch.sqrt(1.0 / alphas_cumprod)
-        self.sqrt_recipm1_alphas_cumprod = torch.sqrt(1.0 / alphas_cumprod - 1)
+        self.sqrt_recip_alphas_cumprod = torch.sqrt(1.0 / self.alphas_cumprod)
+        self.sqrt_recipm1_alphas_cumprod = torch.sqrt(1.0 / self.alphas_cumprod - 1)
 
     def _predict_xstart_from_eps(self, x_t, t, eps):
         assert x_t.shape == eps.shape

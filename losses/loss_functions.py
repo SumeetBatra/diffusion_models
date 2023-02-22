@@ -5,8 +5,9 @@ https://github.com/hojonathanho/diffusion/blob/1e0dceb3b3495bbe19116a5e1b3596cd0
 """
 
 import numpy as np
-
 import torch as th
+
+import torch.nn.functional as F
 
 
 def normal_kl(mean1, logvar1, mean2, logvar2):
@@ -76,3 +77,11 @@ def discretized_gaussian_log_likelihood(x, *, means, log_scales):
     )
     assert log_probs.shape == x.shape
     return log_probs
+
+
+def mse(pred, target, mean=True):
+    if mean:
+        loss = F.mse_loss(target, pred)
+    else:
+        loss = F.mse_loss(target, pred, reduction='none')
+    return loss
