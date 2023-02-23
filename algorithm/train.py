@@ -97,7 +97,7 @@ def train(cfg):
 
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
-    epochs = 6
+    epochs = 20
     scale_factor = 1.0
     for epoch in range(epochs):
         for step, batch in enumerate(dataloader):

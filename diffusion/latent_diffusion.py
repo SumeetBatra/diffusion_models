@@ -39,7 +39,11 @@ class LatentDiffusion(GaussianDiffusion):
         simple_loss = (simple_loss / torch.exp(logvar_t)) + logvar_t
 
         loss = simple_loss + vlb_loss
-        return loss
+        loss_dict = {
+            f'losses/simple_loss': simple_loss.mean().item(),
+            f'losses/vlb_loss': vlb_loss.mean().item(),
+        }
+        return loss, loss_dict
 
     def p_mean_variance(self, model, x, t, clip_denoised=True, denoised_fn=None, model_kwargs=None):
         if model_kwargs is None:
