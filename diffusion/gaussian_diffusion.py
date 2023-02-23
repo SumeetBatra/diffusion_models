@@ -248,7 +248,11 @@ class GaussianDiffusion:
         # take the mean over all non-batch dimensions
         mse_loss = mse_loss.mean(dim=list(range(1, len(mse_loss.shape))))
         loss = mse_loss + vlb_loss
-        return loss
+        loss_dict = {
+            f'losses/mse_loss': mse_loss.mean().item(),
+            f'losses/vlb_loss': vlb_loss.mean().item(),
+        }
+        return loss, loss_dict
 
     @torch.no_grad()
     def p_sample(self, model, x, t, t_index):

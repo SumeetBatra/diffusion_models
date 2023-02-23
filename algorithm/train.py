@@ -1,8 +1,13 @@
 import torch
 import numpy as np
 import os
+import argparse
+import wandb
 
+from attrdict import AttrDict
+from distutils.util import strtobool
 from pathlib import Path
+from utils.utilities import config_wandb
 from torch.optim import AdamW
 from torchvision.utils import save_image
 from models.unet import num_to_groups, Unet
@@ -10,6 +15,19 @@ from autoencoders.conv_autoencoder import AutoEncoder
 from dataset.mnist_fashion_dataset import dataloader
 from diffusion.gaussian_diffusion import GaussianDiffusion, cosine_beta_schedule, linear_beta_schedule
 from diffusion.latent_diffusion import LatentDiffusion
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--latent_diffusion', type=lambda x: bool(strtobool(x)), default=True, help='Use latent diffusion or standard (improved) diffusion')
+    # wandb args
+    parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
+    parser.add_argument('--wandb_project', type=str, default='qd_diffusion')
+    parser.add_argument('--wandb_run_name', type=str, default='diffusion_run')
+    parser.add_argument('--wandb_group', type=str, default='diffusion_group')
+    args = parser.parse_args()
+    cfg = AttrDict(vars(args))
+    return cfg
 
 
 def grad_norm(model):
@@ -25,13 +43,17 @@ def estimate_component_wise_variance(batch):
     return var
 
 
-def train():
+def train(cfg):
     results_folder = Path("./results")
     results_folder.mkdir(exist_ok=True)
     save_and_sample_every = 1000
 
     model_checkpoint_folder = Path('./checkpoints')
     model_checkpoint_folder.mkdir(exist_ok=True)
+
+    if cfg.use_wandb:
+        config_wandb(run_name=cfg.wandb_run_name, wandb_project=cfg.wandb_project, wandb_group=cfg.wandb_group,
+                     cfg=cfg)
 
     autoencoder_checkpoint_path = Path('./checkpoints/autoencoder.pt')
 
@@ -41,29 +63,41 @@ def train():
     channels = 1
     batch_size = 128
 
-    latent_channels = 64
-    latent_size = 20
-
-    model = Unet(
-        dim=latent_size,
-        channels=latent_channels,
-        dim_mults=(1, 2, 4,),
-        use_convnext=True
-    )
-    model.to(device)
-
-    autoencoder = AutoEncoder()
-    autoencoder.load_state_dict(torch.load(str(autoencoder_checkpoint_path)))
-    autoencoder.to(device)
-    autoencoder.eval()
-
-    optimizer = AdamW(model.parameters(), lr=1e-4)
-
-    epochs = 6
-
     timesteps = 600
     betas = cosine_beta_schedule(timesteps)
-    gauss_diff = LatentDiffusion(betas, num_timesteps=timesteps, device=device)
+
+    autoencoder = None
+    if cfg.latent_diffusion:
+        latent_channels = 64
+        latent_size = 20
+
+        model = Unet(
+            dim=latent_size,
+            channels=latent_channels,
+            dim_mults=(1, 2, 4,),
+            use_convnext=True,
+        )
+        autoencoder = AutoEncoder()
+        autoencoder.load_state_dict(torch.load(str(autoencoder_checkpoint_path)))
+        autoencoder.to(device)
+        autoencoder.eval()
+
+        gauss_diff = LatentDiffusion(betas, num_timesteps=timesteps, device=device)
+    else:
+        model = Unet(
+            dim=image_size,
+            channels=channels,
+            dim_mults=(1, 2, 4),
+            use_convnext=True,
+            out_dim=2 * channels
+        )
+        gauss_diff = GaussianDiffusion(betas, num_timesteps=timesteps, device=device)
+
+    model.to(device)
+
+    optimizer = AdamW(model.parameters(), lr=1e-3)
+
+    epochs = 6
     scale_factor = 1.0
     for epoch in range(epochs):
         for step, batch in enumerate(dataloader):
@@ -72,19 +106,20 @@ def train():
             batch_size = batch['pixel_values'].shape[0]
             batch = batch['pixel_values'].to(device)
 
-            with torch.no_grad():
-                latent_batch = autoencoder.encode(batch).sample().detach()
-                # rescale the embeddings to be unit variance -- on first batch only
-                if epoch == 0 and step == 0:
-                    print("Calculating scale factor...")
-                    std = latent_batch.flatten().std()
-                    scale_factor = 1. / std
-                latent_batch *= scale_factor
+            if cfg.latent_diffusion:
+                with torch.no_grad():
+                    batch = autoencoder.encode(batch).sample().detach()
+                    # rescale the embeddings to be unit variance -- on first batch only
+                    if epoch == 0 and step == 0:
+                        print("Calculating scale factor...")
+                        std = batch.flatten().std()
+                        scale_factor = 1. / std
+                    batch *= scale_factor
 
             # Algorithm 1 line 3: sample t uniformally for every example in the batch
             t = torch.randint(0, timesteps, (batch_size,), device=device).long()
 
-            losses = gauss_diff.compute_training_losses(model, latent_batch, t)
+            losses, loss_dict = gauss_diff.compute_training_losses(model, batch, t)
             loss = losses.mean()
 
             loss.backward()
@@ -93,6 +128,10 @@ def train():
                 print(f'Loss: {loss.item()}')
                 print(f'grad norm: {grad_norm(model)}')
             optimizer.step()
+
+            # maybe log to wandb
+            if cfg.use_wandb:
+                wandb.log(loss_dict)
 
             # save generated images
             if step != 0 and step % save_and_sample_every == 0:
@@ -113,4 +152,5 @@ def train():
 
 
 if __name__ == '__main__':
-    train()
+    cfg = parse_args()
+    train(cfg)
