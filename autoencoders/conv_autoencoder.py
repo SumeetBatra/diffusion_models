@@ -56,7 +56,7 @@ class AutoEncoder(nn.Module):
         if sample_posterior:
             z = posterior.sample()
         else:
-            z = posterior.mean()
+            z = posterior.mean
         dec = self.decode(z)
         return dec, posterior
 

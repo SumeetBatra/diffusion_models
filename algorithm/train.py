@@ -3,6 +3,7 @@ import numpy as np
 import os
 import argparse
 import wandb
+import matplotlib.pyplot as plt
 
 from attrdict import AttrDict
 from distutils.util import strtobool
@@ -11,7 +12,7 @@ from utils.utilities import config_wandb, save_cfg
 from torch.optim import AdamW
 from torchvision.utils import save_image
 from models.unet import num_to_groups, Unet
-from autoencoders.conv_autoencoder import AutoEncoder
+from autoencoders.transformer_autoencoder import AutoEncoder
 from dataset.mnist_fashion_dataset import dataloader
 from diffusion.gaussian_diffusion import GaussianDiffusion, cosine_beta_schedule, linear_beta_schedule
 from diffusion.latent_diffusion import LatentDiffusion
@@ -59,7 +60,7 @@ def train(cfg):
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    image_size = 28
+    image_size = 32
     channels = 1
     batch_size = 128
 
@@ -68,8 +69,8 @@ def train(cfg):
 
     autoencoder = None
     if cfg.latent_diffusion:
-        latent_channels = 64
-        latent_size = 20
+        latent_channels = 256
+        latent_size = 8
 
         logvar = torch.full(fill_value=0., size=(timesteps,))
         model = Unet(
@@ -79,7 +80,7 @@ def train(cfg):
             use_convnext=True,
             logvar=logvar
         )
-        autoencoder = AutoEncoder()
+        autoencoder = AutoEncoder(emb_channels=256, z_channels=128)
         autoencoder.load_state_dict(torch.load(str(autoencoder_checkpoint_path)))
         autoencoder.to(device)
         autoencoder.eval()

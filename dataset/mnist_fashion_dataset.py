@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 
 from datasets import load_dataset
 from torchvision import transforms
@@ -13,11 +14,18 @@ channels = 1
 batch_size = 128
 
 
+class ImagePad():
+    def __call__(self, images):
+        images = F.pad(images, value=0., pad=[2, 2, 2, 2])  # make the images 32x32
+        return images
+
+
 # define image transformations (e.g. using torchvision)
 transform = Compose([
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.Lambda(lambda t: (t * 2) - 1)
+            transforms.Lambda(lambda t: (t * 2) - 1),
+            ImagePad()
 ])
 
 

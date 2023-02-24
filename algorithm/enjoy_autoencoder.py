@@ -1,13 +1,13 @@
 import torch
 import matplotlib.pyplot as plt
 
-from autoencoders.conv_autoencoder import AutoEncoder
+from autoencoders.transformer_autoencoder import AutoEncoder
 from dataset.mnist_fashion_dataset import transformed_dataset
 
 def enjoy():
     model_cp = './checkpoints/autoencoder.pt'
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model = AutoEncoder()
+    model = AutoEncoder(emb_channels=256, z_channels=128)
     model.load_state_dict(torch.load(model_cp))
     model.to(device)
     model.eval()
@@ -21,8 +21,8 @@ def enjoy():
     input = input.detach().cpu()
 
     fig, (ax1, ax2) = plt.subplots(1, 2)
-    ax1.imshow(input.reshape(28, 28, 1), cmap='gray')
-    ax2.imshow(output.reshape(28, 28, 1), cmap='gray')
+    ax1.imshow(input.reshape(32, 32, 1), cmap='gray')
+    ax2.imshow(output.reshape(32, 32, 1), cmap='gray')
     plt.show()
 
 

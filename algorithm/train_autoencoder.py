@@ -4,7 +4,7 @@ import os
 
 from pathlib import Path
 from torch.optim import Adam
-from autoencoders.conv_autoencoder import AutoEncoder
+from autoencoders.transformer_autoencoder import AutoEncoder
 from dataset.mnist_fashion_dataset import dataloader
 from losses.loss_functions import normal_kl
 
@@ -18,7 +18,7 @@ def grad_norm(model):
 
 def train_autoencoder():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model = AutoEncoder()
+    model = AutoEncoder(emb_channels=256, z_channels=128)
     model.to(device)
 
     optimizer = Adam(model.parameters(), lr=1e-3)
@@ -29,7 +29,7 @@ def train_autoencoder():
     model_checkpoint_folder = Path('./checkpoints')
     model_checkpoint_folder.mkdir(exist_ok=True)
 
-    epochs = 20
+    epochs = 10
     for epoch in range(epochs):
         print(f'{epoch=}')
 

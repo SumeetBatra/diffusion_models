@@ -4,18 +4,18 @@ import json
 
 from attrdict import AttrDict
 from models.unet import Unet
-from autoencoders.conv_autoencoder import AutoEncoder
+from autoencoders.transformer_autoencoder import AutoEncoder
 from diffusion.gaussian_diffusion import cosine_beta_schedule, linear_beta_schedule, GaussianDiffusion
 from diffusion.latent_diffusion import LatentDiffusion
 
 
 def visualize_generated_images(model_path, autoencoder_path):
-    latent_diffusion = False
-    image_size = 28
+    latent_diffusion = True
+    image_size = 32
     channels = 1
     timesteps = 600
-    latent_channels = 64
-    latent_size = 20
+    latent_channels = 256
+    latent_size = 8
 
     cfg_path = './checkpoints/cfg.json'
     with open(cfg_path, 'r') as f:
@@ -37,7 +37,7 @@ def visualize_generated_images(model_path, autoencoder_path):
             use_convnext=True,
             logvar=logvar
         )
-        autoencoder = AutoEncoder()
+        autoencoder = AutoEncoder(emb_channels=256, z_channels=128)
         autoencoder.load_state_dict(torch.load(autoencoder_path))
         autoencoder.to(device)
         autoencoder.eval()
