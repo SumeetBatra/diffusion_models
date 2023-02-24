@@ -249,14 +249,18 @@ class Unet(nn.Module):
             resnet_block_groups=1,
             use_convnext=True,
             convnext_mult=2,
+            logvar=None
     ):
         super().__init__()
+
+        # log-variance params to optimize saved here if we are doing latent diffusion
+        self.logvar = torch.nn.Parameter(logvar, requires_grad=True)
 
         # determine dimensions
         self.channels = channels
 
         init_dim = default(init_dim, dim // 3 * 2)
-        self.init_conv = nn.Conv2d(channels, init_dim, 7, padding=3)
+        self.init_conv = nn.Conv2d(channels, init_dim, kernel_size=3, stride=1, padding=1)
 
         dims = [init_dim, *map(lambda m: dim * m, dim_mults)]
         in_out = list(zip(dims[:-1], dims[1:]))

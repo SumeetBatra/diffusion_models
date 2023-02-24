@@ -117,7 +117,7 @@ class GaussianDiffusion:
         # At the first timestep return the decoder NLL,
         # otherwise return KL(q(x_{t-1}|x_t,x_0) || p(x_{t-1}|x_t))
         output = torch.where((t == 0), decoder_nll, kl)
-        return {"output": output, "pred_xstart": out["pred_xstart"]}
+        return {"output": output, "pred_xstart": out["pred_xstart"], 'log_variance': out['log_variance']}
 
     # forward diffusion (using the nice property)
     def q_sample(self, x_start, t, noise=None):
@@ -232,11 +232,13 @@ class GaussianDiffusion:
         # Learn the variance using the variational bound, but don't let
         # it affect our mean prediction.
         frozen_out = torch.cat([model_output.detach(), model_var_values], dim=1)
-        vlb_loss = self._compute_vlb_loss(model=lambda *args, r=frozen_out: r,
+        vlb_loss_dict = self._compute_vlb_loss(model=lambda *args, r=frozen_out: r,
                                           x_start=x_start,
                                           x_t=x_t,
                                           t=t,
-                                          clip_denoised=False)['output']
+                                          clip_denoised=False)
+        vlb_loss = vlb_loss_dict['output']
+        model_log_var = vlb_loss_dict['log_variance']
         # Divide by 1000 for equivalence with initial implementation (Equation 16 term 2 in Improved DDPM).
         # Without a factor of 1/1000, the VB term hurts the MSE term.
         vlb_loss *= self.num_timesteps / 1000.0
@@ -251,6 +253,7 @@ class GaussianDiffusion:
         loss_dict = {
             f'losses/mse_loss': mse_loss.mean().item(),
             f'losses/vlb_loss': vlb_loss.mean().item(),
+            f'train/log_var': model_log_var.mean().item()
         }
         return loss, loss_dict
 

@@ -7,7 +7,7 @@ import wandb
 from attrdict import AttrDict
 from distutils.util import strtobool
 from pathlib import Path
-from utils.utilities import config_wandb
+from utils.utilities import config_wandb, save_cfg
 from torch.optim import AdamW
 from torchvision.utils import save_image
 from models.unet import num_to_groups, Unet
@@ -71,11 +71,13 @@ def train(cfg):
         latent_channels = 64
         latent_size = 20
 
+        logvar = torch.full(fill_value=0., size=(timesteps,))
         model = Unet(
             dim=latent_size,
             channels=latent_channels,
             dim_mults=(1, 2, 4,),
             use_convnext=True,
+            logvar=logvar
         )
         autoencoder = AutoEncoder()
         autoencoder.load_state_dict(torch.load(str(autoencoder_checkpoint_path)))
@@ -97,7 +99,7 @@ def train(cfg):
 
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
-    epochs = 20
+    epochs = 6
     scale_factor = 1.0
     for epoch in range(epochs):
         for step, batch in enumerate(dataloader):
@@ -114,6 +116,7 @@ def train(cfg):
                         print("Calculating scale factor...")
                         std = batch.flatten().std()
                         scale_factor = 1. / std
+                        cfg.scale_factor = scale_factor.item()
                     batch *= scale_factor
 
             # Algorithm 1 line 3: sample t uniformally for every example in the batch
@@ -132,6 +135,10 @@ def train(cfg):
             # maybe log to wandb
             if cfg.use_wandb:
                 wandb.log(loss_dict)
+                wandb.log({
+                    'data/batch_mean': batch.mean().item(),
+                    'data/batch_var': batch.var().item(),
+                })
 
             # save generated images
             if step != 0 and step % save_and_sample_every == 0:
@@ -149,6 +156,8 @@ def train(cfg):
 
     print('Saving final model checkpoint...')
     torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), 'model_cp.pt'))
+    # save the cfg
+    save_cfg(model_checkpoint_folder, cfg)
 
 
 if __name__ == '__main__':

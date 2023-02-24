@@ -1,6 +1,8 @@
 import torch
 import matplotlib.pyplot as plt
+import json
 
+from attrdict import AttrDict
 from models.unet import Unet
 from autoencoders.conv_autoencoder import AutoEncoder
 from diffusion.gaussian_diffusion import cosine_beta_schedule, linear_beta_schedule, GaussianDiffusion
@@ -15,16 +17,25 @@ def visualize_generated_images(model_path, autoencoder_path):
     latent_channels = 64
     latent_size = 20
 
+    cfg_path = './checkpoints/cfg.json'
+    with open(cfg_path, 'r') as f:
+        cfg = json.load(f)
+        cfg = AttrDict(cfg)
+    scale_factor = cfg.scale_factor if latent_diffusion else None
+
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     betas = cosine_beta_schedule(timesteps)
 
+    autoencoder = None
     if latent_diffusion:
+        logvar = torch.full(fill_value=0., size=(timesteps,))
         model = Unet(
             dim=latent_size,
             channels=latent_channels,
             dim_mults=(1, 2, 4,),
             use_convnext=True,
+            logvar=logvar
         )
         autoencoder = AutoEncoder()
         autoencoder.load_state_dict(torch.load(autoencoder_path))
@@ -55,11 +66,13 @@ def visualize_generated_images(model_path, autoencoder_path):
 
     if latent_diffusion:
         samples = samples[-1].to(device)
+        # rescale to be in distribution of the autoencoder's latent space
+        samples = samples * (1. / scale_factor)
         samples = autoencoder.decode(samples).detach().cpu().numpy()
     else:
         samples = samples[-1]
 
-    plt.imshow(samples[random_idx].reshape(image_size, image_size, channels), cmap="gray")
+    plt.imshow(samples[random_idx].reshape(image_size, image_size, 1), cmap="gray")
     plt.show()
 
 

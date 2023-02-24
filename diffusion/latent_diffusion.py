@@ -13,9 +13,6 @@ class LatentDiffusion(GaussianDiffusion):
         self.vlb_weights = self.betas ** 2 / (2 * self.posterior_variance * self.alphas * (1 - self.alphas_cumprod))
         self.vlb_weights[0] = self.vlb_weights[1]
 
-        logvar = torch.full(fill_value=0., size=(num_timesteps,))
-        self.logvar = torch.nn.Parameter(logvar, requires_grad=True).to(self.device)
-
     def compute_training_losses(self, model, x_start, t, model_kwargs=None, noise=None):
         if model_kwargs is None:
             model_kwargs = {}
@@ -28,20 +25,22 @@ class LatentDiffusion(GaussianDiffusion):
         target = noise
 
         #  See https://arxiv.org/pdf/2112.10752.pdf Section B on why we can simplify vlb loss like this
-        vlb_loss = mse(model_output, target)
+        vlb_loss = mse(model_output, target, mean=False).mean([1, 2, 3])
         vlb_weights = self.vlb_weights.to(self.device)
         vlb_loss = (vlb_weights[t] * vlb_loss).mean()
         vlb_loss *= self.num_timesteps / 1000.
 
         # simple loss term
-        logvar_t = self.logvar[t]
-        simple_loss = mse(model_output, target)
+        logvar_t = model.logvar[t]
+        simple_loss = mse(model_output, target, mean=False).mean([1, 2, 3])
         simple_loss = (simple_loss / torch.exp(logvar_t)) + logvar_t
+        simple_loss = simple_loss.mean()
 
         loss = simple_loss + vlb_loss
         loss_dict = {
             f'losses/simple_loss': simple_loss.mean().item(),
             f'losses/vlb_loss': vlb_loss.mean().item(),
+            f'train/log_var': model.logvar.mean().item()
         }
         return loss, loss_dict
 

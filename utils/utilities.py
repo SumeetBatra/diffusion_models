@@ -1,7 +1,9 @@
 import logging
 import wandb
 import os
+import json
 
+from attrdict import AttrDict
 from colorlog import ColoredFormatter
 
 ch = logging.StreamHandler()
@@ -56,3 +58,13 @@ def config_wandb(**kwargs):
         for key, val in kwargs.items():
             cfg[key] = val
     wandb.config.update(cfg)
+
+
+def save_cfg(dir, cfg):
+    def to_dict(cfg):
+        if isinstance(cfg, AttrDict):
+            cfg = dict(cfg)
+    filename = 'cfg.json'
+    fp = os.path.join(dir, filename)
+    with open(fp, 'w') as f:
+        json.dump(cfg, f, default=to_dict, indent=4)

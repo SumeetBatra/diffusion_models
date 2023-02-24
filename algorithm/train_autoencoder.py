@@ -29,7 +29,7 @@ def train_autoencoder():
     model_checkpoint_folder = Path('./checkpoints')
     model_checkpoint_folder.mkdir(exist_ok=True)
 
-    epochs = 10
+    epochs = 20
     for epoch in range(epochs):
         print(f'{epoch=}')
 

@@ -8,12 +8,13 @@ class Encoder(nn.Module):
         super().__init__()
         self.layers = nn.Sequential(
             nn.Conv2d(1, 8, 3),
-            nn.LeakyReLU(),
+            nn.GELU(),
             nn.Conv2d(8, 16, 3),
-            nn.LeakyReLU(),
+            nn.GELU(),
             nn.Conv2d(16, 32, 3),
-            nn.LeakyReLU(),
+            nn.GELU(),
             nn.Conv2d(32, 64, 3),
+            nn.GELU(),
         )
 
     def forward(self, x):
@@ -25,11 +26,11 @@ class Decoder(nn.Module):
         super().__init__()
         self.layers = nn.Sequential(
             nn.ConvTranspose2d(32, 16, 3),
-            nn.LeakyReLU(),
+            nn.GELU(),
             nn.ConvTranspose2d(16, 8, 3),
-            nn.LeakyReLU(),
+            nn.GELU(),
             nn.ConvTranspose2d(8, 4, 3),
-            nn.LeakyReLU(),
+            nn.GELU(),
             nn.ConvTranspose2d(4, 1, 3),
             nn.Tanh()
         )
