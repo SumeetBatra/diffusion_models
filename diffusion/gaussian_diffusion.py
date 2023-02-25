@@ -53,7 +53,7 @@ class GaussianDiffusion:
 
         # define alphas
         self.alphas = 1. - betas
-        self.alphas_cumprod = torch.cumprod(self.alphas, axis=0)
+        self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
         alphas_cumprod_prev = F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0)
         self.sqrt_recip_alphas = torch.sqrt(1.0 / self.alphas)
 

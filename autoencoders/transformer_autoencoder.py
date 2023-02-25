@@ -7,7 +7,7 @@ from typing import List
 
 
 def normalization(channels: int):
-    return nn.GroupNorm(num_groups=4, num_channels=channels, eps=1e-6)
+    return nn.GroupNorm(num_groups=1, num_channels=channels, eps=1e-6)
 
 
 def swish(x: torch.Tensor):
@@ -129,8 +129,8 @@ class AutoEncoder(nn.Module):
         :param z_channels: is the number of channels in the embedding space
         """
         super().__init__()
-        self.encoder = Encoder(channels=4, channel_multipliers=[1, 2, 4], n_resnet_blocks=2, in_channels=1, z_channels=128)
-        self.decoder = Decoder(channels=4, channel_multipliers=[4, 2, 1], n_resnet_blocks=2, out_channels=1, z_channels=128)
+        self.encoder = Encoder(channels=2, channel_multipliers=[1, 2, 4, 8], n_resnet_blocks=3, in_channels=1, z_channels=z_channels)
+        self.decoder = Decoder(channels=2, channel_multipliers=[8, 4, 2, 1], n_resnet_blocks=3, out_channels=1, z_channels=z_channels)
         # Convolution to map from embedding space to
         # quantized embedding space moments (mean and log variance)
         self.quant_conv = nn.Conv2d(2 * z_channels, 2 * emb_channels, 1)

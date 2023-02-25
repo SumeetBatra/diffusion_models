@@ -69,8 +69,8 @@ def train(cfg):
 
     autoencoder = None
     if cfg.latent_diffusion:
-        latent_channels = 256
-        latent_size = 8
+        latent_channels = 16
+        latent_size = 4
 
         logvar = torch.full(fill_value=0., size=(timesteps,))
         model = Unet(
@@ -80,7 +80,7 @@ def train(cfg):
             use_convnext=True,
             logvar=logvar
         )
-        autoencoder = AutoEncoder(emb_channels=256, z_channels=128)
+        autoencoder = AutoEncoder(emb_channels=16, z_channels=8)
         autoencoder.load_state_dict(torch.load(str(autoencoder_checkpoint_path)))
         autoencoder.to(device)
         autoencoder.eval()
@@ -100,7 +100,7 @@ def train(cfg):
 
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
-    epochs = 6
+    epochs = 10
     scale_factor = 1.0
     for epoch in range(epochs):
         for step, batch in enumerate(dataloader):
@@ -123,7 +123,7 @@ def train(cfg):
             # Algorithm 1 line 3: sample t uniformally for every example in the batch
             t = torch.randint(0, timesteps, (batch_size,), device=device).long()
 
-            losses, loss_dict = gauss_diff.compute_training_losses(model, batch, t)
+            losses, info_dict = gauss_diff.compute_training_losses(model, batch, t)
             loss = losses.mean()
 
             loss.backward()
@@ -135,7 +135,7 @@ def train(cfg):
 
             # maybe log to wandb
             if cfg.use_wandb:
-                wandb.log(loss_dict)
+                wandb.log(info_dict)
                 wandb.log({
                     'data/batch_mean': batch.mean().item(),
                     'data/batch_var': batch.var().item(),

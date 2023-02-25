@@ -4,10 +4,11 @@ import matplotlib.pyplot as plt
 from autoencoders.transformer_autoencoder import AutoEncoder
 from dataset.mnist_fashion_dataset import transformed_dataset
 
+
 def enjoy():
     model_cp = './checkpoints/autoencoder.pt'
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model = AutoEncoder(emb_channels=256, z_channels=128)
+    model = AutoEncoder(emb_channels=16, z_channels=8)
     model.load_state_dict(torch.load(model_cp))
     model.to(device)
     model.eval()

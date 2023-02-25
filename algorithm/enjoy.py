@@ -14,8 +14,8 @@ def visualize_generated_images(model_path, autoencoder_path):
     image_size = 32
     channels = 1
     timesteps = 600
-    latent_channels = 256
-    latent_size = 8
+    latent_channels = 16
+    latent_size = 4
 
     cfg_path = './checkpoints/cfg.json'
     with open(cfg_path, 'r') as f:
@@ -37,7 +37,7 @@ def visualize_generated_images(model_path, autoencoder_path):
             use_convnext=True,
             logvar=logvar
         )
-        autoencoder = AutoEncoder(emb_channels=256, z_channels=128)
+        autoencoder = AutoEncoder(emb_channels=16, z_channels=8)
         autoencoder.load_state_dict(torch.load(autoencoder_path))
         autoencoder.to(device)
         autoencoder.eval()

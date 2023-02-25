@@ -23,6 +23,8 @@ class LatentDiffusion(GaussianDiffusion):
 
         model_output = model(x_t, t)  # TODO: implement conditioning via model_kwargs
         target = noise
+        with torch.no_grad():
+            output_mean, output_var = model_output.mean(), model_output.var()
 
         #  See https://arxiv.org/pdf/2112.10752.pdf Section B on why we can simplify vlb loss like this
         vlb_loss = mse(model_output, target, mean=False).mean([1, 2, 3])
@@ -40,7 +42,9 @@ class LatentDiffusion(GaussianDiffusion):
         loss_dict = {
             f'losses/simple_loss': simple_loss.mean().item(),
             f'losses/vlb_loss': vlb_loss.mean().item(),
-            f'train/log_var': model.logvar.mean().item()
+            f'train/log_var': model.logvar.mean().item(),
+            f'data/model_output_mean': output_mean.item(),
+            f'data/model_output_var': output_var.item(),
         }
         return loss, loss_dict
 
