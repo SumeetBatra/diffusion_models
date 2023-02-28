@@ -30,7 +30,7 @@ class LatentDiffusion(GaussianDiffusion):
         vlb_loss = mse(model_output, target, mean=False).mean([1, 2, 3])
         vlb_weights = self.vlb_weights.to(self.device)
         vlb_loss = (vlb_weights[t] * vlb_loss).mean()
-        vlb_loss *= self.num_timesteps / 1000.
+        vlb_loss *= 1e-5
 
         # simple loss term
         logvar_t = model.logvar[t]

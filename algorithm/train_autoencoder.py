@@ -19,7 +19,7 @@ def grad_norm(model):
 
 def train_autoencoder():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model = AutoEncoder(emb_channels=16, z_channels=8)
+    model = AutoEncoder(emb_channels=8, z_channels=4)
     model.to(device)
 
     optimizer = Adam(model.parameters(), lr=1e-3)
@@ -33,8 +33,8 @@ def train_autoencoder():
     disc_start = 50001
     kl_weight = 1e-6
     disc_weight = 0.5
-    loss_func = LPIPSWithDiscriminator(disc_start, kl_weight=kl_weight, disc_weight=disc_weight)
-    optimizer2 = Adam(loss_func.discriminator.parameters(), lr=1e-3)
+    # loss_func = LPIPSWithDiscriminator(disc_start, kl_weight=kl_weight, disc_weight=disc_weight)
+    # optimizer2 = Adam(loss_func.discriminator.parameters(), lr=1e-3)
 
 
     epochs = 10
@@ -45,22 +45,20 @@ def train_autoencoder():
 
         for step, batch in enumerate(dataloader):
             optimizer.zero_grad()
-            optimizer2.zero_grad()
 
             batch_size = batch['pixel_values'].shape[0]
             batch = batch['pixel_values'].to(device)
 
             img_out, posterior = model(batch)
-            loss = loss_func(batch, img_out, posterior, global_step, 0)
-            loss += loss_func(batch, img_out, posterior, global_step, 1)
-            # loss = mse_loss_func(batch, img_out) + kl_loss_coef * posterior.kl().mean()
+            # loss = loss_func(batch, img_out, posterior, global_step, 0)
+            # loss += loss_func(batch, img_out, posterior, global_step, 1)
+            loss = mse_loss_func(batch, img_out) + kl_loss_coef * posterior.kl().mean()
 
             loss.backward()
             if step % 100 == 0:
                 print(f'Loss: {loss.item()}')
                 print(f'grad norm: {grad_norm(model)}')
             optimizer.step()
-            optimizer2.step()
             global_step += step
 
     print('Saving final model checkpoint...')

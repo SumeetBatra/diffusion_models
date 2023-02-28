@@ -14,7 +14,7 @@ def visualize_generated_images(model_path, autoencoder_path):
     image_size = 32
     channels = 1
     timesteps = 600
-    latent_channels = 16
+    latent_channels = 8
     latent_size = 4
 
     cfg_path = './checkpoints/cfg.json'
@@ -31,13 +31,13 @@ def visualize_generated_images(model_path, autoencoder_path):
     if latent_diffusion:
         logvar = torch.full(fill_value=0., size=(timesteps,))
         model = Unet(
-            dim=latent_size,
+            dim=32,
             channels=latent_channels,
             dim_mults=(1, 2, 4,),
-            use_convnext=True,
+            use_convnext=False,
             logvar=logvar
         )
-        autoencoder = AutoEncoder(emb_channels=16, z_channels=8)
+        autoencoder = AutoEncoder(emb_channels=8, z_channels=4)
         autoencoder.load_state_dict(torch.load(autoencoder_path))
         autoencoder.to(device)
         autoencoder.eval()
