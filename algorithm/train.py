@@ -74,10 +74,9 @@ def train(cfg):
 
         logvar = torch.full(fill_value=0., size=(timesteps,))
         model = Unet(
-            dim=32,
+            dim=64,
             channels=latent_channels,
             dim_mults=(1, 2, 4,),
-            use_convnext=False,
             logvar=logvar
         )
         autoencoder = AutoEncoder(emb_channels=8, z_channels=4)
@@ -91,7 +90,6 @@ def train(cfg):
             dim=image_size,
             channels=channels,
             dim_mults=(1, 2, 4),
-            use_convnext=True,
             out_dim=2 * channels
         )
         gauss_diff = GaussianDiffusion(betas, num_timesteps=timesteps, device=device)
@@ -100,7 +98,7 @@ def train(cfg):
 
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
-    epochs = 10
+    epochs = 20
     scale_factor = 1.0
     for epoch in range(epochs):
         for step, batch in enumerate(dataloader):

@@ -3,18 +3,51 @@ import torch
 import torch.nn as nn
 
 
+class ResnetBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.proj = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.norm = nn.GroupNorm(1, out_channels)
+        self.act = nn.SiLU()
+        self.res_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1) if in_channels != out_channels else nn.Identity()
+
+    def forward(self, x):
+        h = self.proj(x)
+        h = self.norm(h)
+        h = self.act(h)
+
+        return h + self.res_conv(x)
+
+
+class Upsample(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.up = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=4, stride=2, padding=1)
+
+    def forward(self, x):
+        return self.up(x)
+
+
+class Downsample(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.down = nn.Conv2d(in_channels, in_channels, kernel_size=4, stride=2, padding=1)
+
+    def forward(self, x):
+        return self.down(x)
+
+
 class Encoder(nn.Module):
     def __init__(self):
         super().__init__()
         self.layers = nn.Sequential(
-            nn.Conv2d(1, 8, 3),
-            nn.GELU(),
-            nn.Conv2d(8, 16, 3),
-            nn.GELU(),
-            nn.Conv2d(16, 32, 3),
-            nn.GELU(),
-            nn.Conv2d(32, 64, 3),
-            nn.GELU(),
+            ResnetBlock(in_channels=1, out_channels=2),
+            Downsample(in_channels=2),
+            ResnetBlock(in_channels=2, out_channels=4),
+            Downsample(in_channels=4),
+            ResnetBlock(in_channels=4, out_channels=8),
+            Downsample(in_channels=8),
+            ResnetBlock(in_channels=8, out_channels=8)
         )
 
     def forward(self, x):
@@ -25,14 +58,14 @@ class Decoder(nn.Module):
     def __init__(self):
         super().__init__()
         self.layers = nn.Sequential(
-            nn.ConvTranspose2d(32, 16, 3),
-            nn.GELU(),
-            nn.ConvTranspose2d(16, 8, 3),
-            nn.GELU(),
-            nn.ConvTranspose2d(8, 4, 3),
-            nn.GELU(),
-            nn.ConvTranspose2d(4, 1, 3),
-            nn.Tanh()
+            ResnetBlock(in_channels=4, out_channels=4),
+            Upsample(in_channels=4),
+            ResnetBlock(in_channels=4, out_channels=2),
+            Upsample(in_channels=2),
+            ResnetBlock(in_channels=2, out_channels=1),
+            Upsample(in_channels=1),
+            nn.GroupNorm(num_groups=1, num_channels=1),
+            nn.Conv2d(in_channels=1, out_channels=1, kernel_size=3, stride=1, padding=1)
         )
 
     def forward(self, x):
@@ -44,7 +77,7 @@ class AutoEncoder(nn.Module):
         super().__init__()
         self.encoder = Encoder()
         self.decoder = Decoder()
-        z_channels = 32
+        z_channels = 4
         quant_emb_channels = 2 * z_channels
         # map from embeddings to quantized embedding space moments (mean and variance)
         self.quant_conv = nn.Conv2d(2 * z_channels, 2 * quant_emb_channels, 1)

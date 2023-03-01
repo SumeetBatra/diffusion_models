@@ -2,13 +2,15 @@ import torch
 import matplotlib.pyplot as plt
 
 from autoencoders.transformer_autoencoder import AutoEncoder
+from autoencoders.conv_autoencoder import AutoEncoder as ConvVAE
 from dataset.mnist_fashion_dataset import transformed_dataset
 
 
 def enjoy():
     model_cp = './checkpoints/autoencoder.pt'
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model = AutoEncoder(emb_channels=128, z_channels=64)
+    model = AutoEncoder(emb_channels=8, z_channels=4)
+    # model = ConvVAE()
     model.load_state_dict(torch.load(model_cp))
     model.to(device)
     model.eval()

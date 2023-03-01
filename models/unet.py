@@ -247,8 +247,6 @@ class Unet(nn.Module):
             channels=3,
             with_time_emb=True,
             resnet_block_groups=1,
-            use_convnext=True,
-            convnext_mult=2,
             logvar=None
     ):
         super().__init__()
@@ -265,10 +263,7 @@ class Unet(nn.Module):
         dims = [init_dim, *map(lambda m: dim * m, dim_mults)]
         in_out = list(zip(dims[:-1], dims[1:]))
 
-        if use_convnext:
-            block_klass = partial(ConvNextBlock, mult=convnext_mult)
-        else:
-            block_klass = partial(ResnetBlock, groups=resnet_block_groups)
+        block_klass = partial(ResnetBlock, groups=resnet_block_groups)
 
         # time embeddings
         if with_time_emb:
@@ -294,8 +289,8 @@ class Unet(nn.Module):
             self.downs.append(
                 nn.ModuleList(
                     [
-                        block_klass(dim_in, dim_out, time_emb_dim=time_dim),
-                        block_klass(dim_out, dim_out, time_emb_dim=time_dim),
+                        ResnetBlock(dim=dim_in, dim_out=dim_out, time_emb_dim=time_dim, groups=resnet_block_groups),
+                        ResnetBlock(dim=dim_out, dim_out=dim_out, time_emb_dim=time_dim, groups=resnet_block_groups),
                         Residual(PreNorm(dim_out, LinearAttention(dim_out))),
                         Downsample(dim_out) if not is_last else nn.Identity(),
                     ]
@@ -303,9 +298,9 @@ class Unet(nn.Module):
             )
 
         mid_dim = dims[-1]
-        self.mid_block1 = block_klass(mid_dim, mid_dim, time_emb_dim=time_dim)
+        self.mid_block1 = ResnetBlock(dim=mid_dim, dim_out=mid_dim, time_emb_dim=time_dim, groups=resnet_block_groups)
         self.mid_attn = Residual(PreNorm(mid_dim, Attention(mid_dim)))
-        self.mid_block2 = block_klass(mid_dim, mid_dim, time_emb_dim=time_dim)
+        self.mid_block2 = ResnetBlock(dim=mid_dim, dim_out=mid_dim, time_emb_dim=time_dim, groups=resnet_block_groups)
 
         for ind, (dim_in, dim_out) in enumerate(reversed(in_out[1:])):
             is_last = ind >= (num_resolutions - 1)
@@ -313,8 +308,8 @@ class Unet(nn.Module):
             self.ups.append(
                 nn.ModuleList(
                     [
-                        block_klass(dim_out * 2, dim_in, time_emb_dim=time_dim),
-                        block_klass(dim_in, dim_in, time_emb_dim=time_dim),
+                        ResnetBlock(dim=dim_out * 2, dim_out=dim_in, time_emb_dim=time_dim, groups=resnet_block_groups),
+                        ResnetBlock(dim=dim_in, dim_out=dim_in, time_emb_dim=time_dim, groups=resnet_block_groups),
                         Residual(PreNorm(dim_in, LinearAttention(dim_in))),
                         Upsample(dim_in) if not is_last else nn.Identity(),
                     ]

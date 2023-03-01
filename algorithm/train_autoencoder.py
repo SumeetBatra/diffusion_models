@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from torch.optim import Adam
 from autoencoders.transformer_autoencoder import AutoEncoder
+from autoencoders.conv_autoencoder import AutoEncoder as ConvVAE
 from dataset.mnist_fashion_dataset import dataloader
 from losses.loss_functions import normal_kl
 from losses.contperceptual import LPIPSWithDiscriminator
@@ -20,6 +21,7 @@ def grad_norm(model):
 def train_autoencoder():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = AutoEncoder(emb_channels=8, z_channels=4)
+    # model = ConvVAE()
     model.to(device)
 
     optimizer = Adam(model.parameters(), lr=1e-3)
@@ -37,7 +39,7 @@ def train_autoencoder():
     # optimizer2 = Adam(loss_func.discriminator.parameters(), lr=1e-3)
 
 
-    epochs = 10
+    epochs = 20
     global_step = 0
     for epoch in range(epochs):
         print(f'{epoch=}')

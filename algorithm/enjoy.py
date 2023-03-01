@@ -31,10 +31,9 @@ def visualize_generated_images(model_path, autoencoder_path):
     if latent_diffusion:
         logvar = torch.full(fill_value=0., size=(timesteps,))
         model = Unet(
-            dim=32,
+            dim=64,
             channels=latent_channels,
             dim_mults=(1, 2, 4,),
-            use_convnext=False,
             logvar=logvar
         )
         autoencoder = AutoEncoder(emb_channels=8, z_channels=4)
@@ -48,7 +47,6 @@ def visualize_generated_images(model_path, autoencoder_path):
             dim=image_size,
             channels=channels,
             dim_mults=(1, 2, 4),
-            use_convnext=True,
             out_dim=2 * channels
         )
         gauss_diff = GaussianDiffusion(betas, num_timesteps=timesteps, device=device)
