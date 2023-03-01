@@ -61,7 +61,7 @@ class LatentDiffusion(GaussianDiffusion):
                 return x.clamp(-1, 1)
             return x
 
-        pred_xstart = process_xstart(self._predict_xstart_from_eps(x_t=x, t=t, eps=model_output))
+        pred_xstart = process_xstart(self.predict_xstart_from_eps(x_t=x, t=t, eps=model_output))
 
         model_mean, posterior_variance, posterior_log_variance = self.q_posterior_mean_variance(x_start=pred_xstart, x_t=x, t=t)
 

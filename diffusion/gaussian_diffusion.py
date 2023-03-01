@@ -54,7 +54,7 @@ class GaussianDiffusion:
         # define alphas
         self.alphas = 1. - betas
         self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
-        alphas_cumprod_prev = F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0)
+        self.alphas_cumprod_prev = F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0)
         self.sqrt_recip_alphas = torch.sqrt(1.0 / self.alphas)
 
         # calculations for diffusion q(x_t | x_{t-1}) and others
@@ -64,19 +64,19 @@ class GaussianDiffusion:
         # calculations for posterior q(x_{t-1} | x_t, x_0)
         # we can compute this directly for any intermediate timestep b/c sum of gaussians is gaussian,
         # giving us a closed form solution
-        self.posterior_variance = betas * (1. - alphas_cumprod_prev) / (1. - self.alphas_cumprod)
+        self.posterior_variance = betas * (1. - self.alphas_cumprod_prev) / (1. - self.alphas_cumprod)
         # variance is 0 at beginning of diffusion chain so we "clip" it by replacing the 0th index with the 1st
         self.posterior_log_variance_clipped = torch.log(torch.cat((self.posterior_variance[1].view(-1, 1), self.posterior_variance[1:].view(-1, 1))).squeeze())
 
         # equation 11 first term in improved DDPM
-        self.posterior_mean_coef1 = betas * torch.sqrt(alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
+        self.posterior_mean_coef1 = betas * torch.sqrt(self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
         # equation 11 second term in Improved DDPMs
-        self.posterior_mean_coef2 = (1.0 - alphas_cumprod_prev) * torch.sqrt(self.alphas) / (1.0 - self.alphas_cumprod)
+        self.posterior_mean_coef2 = (1.0 - self.alphas_cumprod_prev) * torch.sqrt(self.alphas) / (1.0 - self.alphas_cumprod)
 
         self.sqrt_recip_alphas_cumprod = torch.sqrt(1.0 / self.alphas_cumprod)
         self.sqrt_recipm1_alphas_cumprod = torch.sqrt(1.0 / self.alphas_cumprod - 1)
 
-    def _predict_xstart_from_eps(self, x_t, t, eps):
+    def predict_xstart_from_eps(self, x_t, t, eps):
         assert x_t.shape == eps.shape
         sqrt_recip_alphas_cumprod_t = extract(self.sqrt_recip_alphas_cumprod, t, x_t.shape)
         sqrt_recipm1_alphas_cumprod_t = extract(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape)
@@ -193,7 +193,7 @@ class GaussianDiffusion:
             return x
 
         # assume that we predict epsilon noise
-        pred_xstart = process_xstart(self._predict_xstart_from_eps(x_t=x, t=t, eps=model_output))
+        pred_xstart = process_xstart(self.predict_xstart_from_eps(x_t=x, t=t, eps=model_output))
         model_mean, _, _ = self.q_posterior_mean_variance(x_start=pred_xstart, x_t=x, t=t)
 
         assert model_mean.shape == model_log_variance.shape == pred_xstart.shape == x.shape

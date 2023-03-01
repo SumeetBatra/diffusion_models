@@ -7,10 +7,12 @@ from models.unet import Unet
 from autoencoders.transformer_autoencoder import AutoEncoder
 from diffusion.gaussian_diffusion import cosine_beta_schedule, linear_beta_schedule, GaussianDiffusion
 from diffusion.latent_diffusion import LatentDiffusion
+from diffusion.ddim import DDIMSampler
 
 
 def visualize_generated_images(model_path, autoencoder_path):
     latent_diffusion = True
+    use_ddim = True
     image_size = 32
     channels = 1
     timesteps = 600
@@ -54,20 +56,27 @@ def visualize_generated_images(model_path, autoencoder_path):
     model.load_state_dict(torch.load(model_path))
     model = model.to(device)
 
+    ddim_sampler = DDIMSampler(gauss_diff, n_steps=50)
+
     random_idx = torch.randint(0, 64, (1,))
     print(f'{random_idx=}')
 
     size, channels = (latent_size, latent_channels) if latent_diffusion else (image_size, channels)
 
     # sample 64 images
-    samples = gauss_diff.sample(model, size, batch_size=64, channels=channels)
+    if use_ddim:
+        samples = ddim_sampler.sample(model, shape=[64, channels, size, size], cond=None)
+    else:
+        samples = gauss_diff.sample(model, size, batch_size=64, channels=channels)
 
     if latent_diffusion:
-        samples = samples[-1].to(device)
-        # rescale to be in distribution of the autoencoder's latent space
+        if not use_ddim:
+            samples = samples[-1].to(device)
+            # rescale to be in distribution of the autoencoder's latent space
         samples = samples * (1. / scale_factor)
         samples = autoencoder.decode(samples).detach().cpu().numpy()
     else:
+        # standard diffusion
         samples = samples[-1]
 
     plt.imshow(samples[random_idx].reshape(image_size, image_size, 1), cmap="gray")
