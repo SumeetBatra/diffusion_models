@@ -1,0 +1,91 @@
+import torch
+import numpy as np
+import os
+
+from pathlib import Path
+from torch.optim import Adam
+from autoencoders.transformer_autoencoder import AutoEncoder
+from autoencoders.policy_hyperautoencoder import HyperAutoEncoder
+from autoencoders.conv_autoencoder import AutoEncoder as ConvVAE
+from dataset.mnist_fashion_dataset import dataloader
+from losses.loss_functions import normal_kl
+from losses.contperceptual import LPIPSWithDiscriminator
+
+from dataset.policy_dataset import e_data_loader_train, actor_cfg
+import torch.nn.functional as F
+
+
+def grad_norm(model):
+    sqsum = 0.0
+    for p in model.parameters():
+        sqsum += (p.grad ** 2).sum().item()
+    return np.sqrt(sqsum)
+
+
+def train_autoencoder():
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # model = AutoEncoder(emb_channels=8, z_channels=4)
+    # model = ConvVAE()
+    model = HyperAutoEncoder(actor_cfg, emb_channels=8, z_channels=4)
+    model.to(device)
+
+    optimizer = Adam(model.parameters(), lr=1e-3)
+
+    mse_loss_func = torch.nn.MSELoss()
+    kl_loss_coef = 1e-6
+
+    model_checkpoint_folder = Path('./checkpoints')
+    model_checkpoint_folder.mkdir(exist_ok=True)
+
+    disc_start = 50001
+    kl_weight = 1e-6
+    disc_weight = 0.5
+    # loss_func = LPIPSWithDiscriminator(disc_start, kl_weight=kl_weight, disc_weight=disc_weight)
+    # optimizer2 = Adam(loss_func.discriminator.parameters(), lr=1e-3)
+
+
+    epochs = 100
+    global_step = 0
+    for epoch in range(epochs):
+        print(f'{epoch=}')
+        print(f'{global_step=}')
+
+        for step, batch in enumerate(e_data_loader_train):
+            optimizer.zero_grad()
+
+            # batch = batch['pixel_values'].to(device)
+            batch = batch[0]
+
+            img_out, posterior = model(batch)
+            # loss = loss_func(batch, img_out, posterior, global_step, 0)
+            # loss += loss_func(batch, img_out, posterior, global_step, 1)
+            pred_weights_dict = {}
+            for out_ in img_out:
+                for name, param in out_.named_parameters():
+                    if name not in pred_weights_dict:
+                        pred_weights_dict[name] = []
+                    pred_weights_dict[name].append(param)
+                    
+
+            # loss is MSE loss
+            mse_loss = 0
+            for key in pred_weights_dict:
+                mse_loss += F.mse_loss(torch.stack(pred_weights_dict[key]), batch[key])
+
+            # loss = mse_loss_func(batch, img_out) + kl_loss_coef * posterior.kl().mean()
+            loss = mse_loss + kl_loss_coef * posterior.kl().mean()
+
+            loss.backward()
+            if step % 100 == 0:
+                print(f'Loss: {loss.item()}')
+                # print(f'grad norm: {grad_norm(model)}')
+            optimizer.step()
+            global_step += step
+
+    print('Saving final model checkpoint...')
+    torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), 'autoencoder.pt'))
+
+
+if __name__ == '__main__':
+    train_autoencoder()
+
