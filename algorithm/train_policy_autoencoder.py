@@ -34,7 +34,7 @@ def train_autoencoder():
     mse_loss_func = torch.nn.MSELoss()
     kl_loss_coef = 1e-6
 
-    model_checkpoint_folder = Path('./checkpoints2')
+    model_checkpoint_folder = Path('./checkpoints')
     model_checkpoint_folder.mkdir(exist_ok=True)
 
     disc_start = 50001

@@ -166,10 +166,10 @@ class HyperAutoEncoder(nn.Module):
         # Get embeddings with shape `[batch_size, z_channels * 2, z_height, z_height]`
         z = self.encoder(img)
         # Get the moments in the quantized embedding space
-        # moments = self.quant_conv(z)
+        moments = self.quant_conv(z)
         # Return the distribution
-        # return GaussianDistribution(moments)
-        return z
+        return GaussianDistribution(moments)
+        # return z
 
     def decode(self, z: torch.Tensor):
         """
@@ -178,18 +178,18 @@ class HyperAutoEncoder(nn.Module):
         :param z: is the latent representation with shape `[batch_size, emb_channels, z_height, z_height]`
         """
         # Map to embedding space from the quantized representation
-        # z = self.post_quant_conv(z)
+        z = self.post_quant_conv(z)
         # Decode the image of shape `[batch_size, channels, height, width]`
         return self.decoder([ self.dummy_actor() for _ in range(z.shape[0])], z)
 
     def forward(self, x: torch.Tensor):
-        # posterior = self.encode(x)
-        moment = self.encode(x)
-        # z = posterior.sample()
-        out = self.decode(moment)
-        # out = self.decode(posterior.mean)
-        # return out, posterior
-        return out
+        posterior = self.encode(x)
+        # moment = self.encode(x)
+        z = posterior.sample()
+        # out = self.decode(moment)
+        out = self.decode(z)
+        return out, posterior
+        # return out
     
     def to(self, device):
         super().to(device)

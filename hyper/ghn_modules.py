@@ -96,7 +96,7 @@ class MLP_GHN(nn.Module):
         self.embed = torch.nn.Embedding(3, hid)
 
         self.shape_enc3 = nn.Linear(1,hid).to(device)
-        self.measure_enc = nn.Linear(128,len(self.model_shape_indicators)).to(device)
+        self.measure_enc = nn.Linear(64,len(self.model_shape_indicators)).to(device)
         if hypernet == 'gatedgnn':
             self.gnn = GatedGNN(in_features=hid, ve=False)
         elif hypernet == 'mlp':
@@ -161,7 +161,7 @@ class MLP_GHN(nn.Module):
         # x_before_gnn = self.shape_enc(params_map, predict_class_layers=predict_class_layers)
         # x_before_gnn = self.shape_enc2(shape_ind)
         shape_ind = self.model_shape_indicators.repeat(len(nets_torch),1)
-        enc_measure = self.measure_enc(measure.reshape(-1,128))
+        enc_measure = self.measure_enc(measure.reshape(-1,64))
         shape_ind = shape_ind + enc_measure.view(-1,1)
         x_before_gnn = self.shape_enc3(shape_ind)
 
