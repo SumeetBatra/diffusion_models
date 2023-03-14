@@ -2,6 +2,7 @@ import logging
 import wandb
 import os
 import json
+import torch
 
 from attrdict import AttrDict
 from colorlog import ColoredFormatter
@@ -68,3 +69,13 @@ def save_cfg(dir, cfg):
     fp = os.path.join(dir, filename)
     with open(fp, 'w') as f:
         json.dump(cfg, f, default=to_dict, indent=4)
+
+
+def save_checkpoint(cp_dir, cp_name, model, optimizer, **kwargs):
+    os.makedirs(cp_dir, exist_ok=True)
+    params = {}
+    params['model_state_dict'] = model.state_dict()
+    params['optim_state_dict'] = optimizer.state_dict()
+    for key, val in kwargs:
+        params[key] = val
+    torch.save(params, os.path.join(cp_dir, cp_name))

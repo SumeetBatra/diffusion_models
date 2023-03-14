@@ -1,14 +1,15 @@
 import torch
 import numpy as np
 import os
+import pickle
+import glob
 
 from pathlib import Path
 from torch.optim import Adam
-from autoencoders.transformer_autoencoder import AutoEncoder
-from autoencoders.conv_autoencoder import AutoEncoder as ConvVAE
-from dataset.mnist_fashion_dataset import dataloader
-from losses.loss_functions import normal_kl
-from losses.contperceptual import LPIPSWithDiscriminator
+from dataset.policy_dataset import ElitesDataset
+from torch.utils.data import DataLoader
+from autoencoders.policy.resnet3d import ResNet3DAutoEncoder
+from RL.actor_critic import Actor
 
 
 def grad_norm(model):
@@ -18,9 +19,28 @@ def grad_norm(model):
     return np.sqrt(sqsum)
 
 
+def dataset_factory():
+    archive_data_path = '/home/sumeet/diffusion_models/data'
+    archive_dfs = []
+
+    archive_df_paths = glob.glob(archive_data_path + '/*.pkl')
+    for path in archive_df_paths:
+        with open(path, 'rb') as f:
+            archive_df = pickle.load(f)
+            archive_dfs.append(archive_df)
+
+    mlp_shape = (128, 128, 6)
+
+    dummy_agent = Actor(obs_shape=18, action_shape=np.array([6]))
+
+    elite_dataset = ElitesDataset(archive_dfs, mlp_shape, dummy_agent)
+
+    return DataLoader(elite_dataset, batch_size=32, shuffle=True)
+
+
 def train_autoencoder():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model = AutoEncoder(emb_channels=8, z_channels=4)
+    model = ResNet3DAutoEncoder(emb_channels=64, z_channels=32)
     # model = ConvVAE()
     model.to(device)
 
@@ -32,12 +52,13 @@ def train_autoencoder():
     model_checkpoint_folder = Path('./checkpoints')
     model_checkpoint_folder.mkdir(exist_ok=True)
 
+    dataloader = dataset_factory()
+
     disc_start = 50001
     kl_weight = 1e-6
     disc_weight = 0.5
     # loss_func = LPIPSWithDiscriminator(disc_start, kl_weight=kl_weight, disc_weight=disc_weight)
     # optimizer2 = Adam(loss_func.discriminator.parameters(), lr=1e-3)
-
 
     epochs = 20
     global_step = 0
@@ -48,8 +69,7 @@ def train_autoencoder():
         for step, batch in enumerate(dataloader):
             optimizer.zero_grad()
 
-            batch_size = batch['pixel_values'].shape[0]
-            batch = batch['pixel_values'].to(device)
+            batch = batch.to(device)
 
             img_out, posterior = model(batch)
             # loss = loss_func(batch, img_out, posterior, global_step, 0)
