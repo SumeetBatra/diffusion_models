@@ -58,7 +58,7 @@ def train_autoencoder():
 
             loss.backward()
             if step % 100 == 0:
-                print(f'Loss: {loss.item()}')
+                print(f'Loss: {loss.item()}, MSE: {mse_loss_func(batch, img_out).item()}, KL: {posterior.kl().mean().item()}')
                 print(f'grad norm: {grad_norm(model)}')
             optimizer.step()
             global_step += step

@@ -166,9 +166,10 @@ class HyperAutoEncoder(nn.Module):
         # Get embeddings with shape `[batch_size, z_channels * 2, z_height, z_height]`
         z = self.encoder(img)
         # Get the moments in the quantized embedding space
-        moments = self.quant_conv(z)
+        # moments = self.quant_conv(z)
         # Return the distribution
-        return GaussianDistribution(moments)
+        # return GaussianDistribution(moments)
+        return z
 
     def decode(self, z: torch.Tensor):
         """
@@ -177,15 +178,18 @@ class HyperAutoEncoder(nn.Module):
         :param z: is the latent representation with shape `[batch_size, emb_channels, z_height, z_height]`
         """
         # Map to embedding space from the quantized representation
-        z = self.post_quant_conv(z)
+        # z = self.post_quant_conv(z)
         # Decode the image of shape `[batch_size, channels, height, width]`
         return self.decoder([ self.dummy_actor() for _ in range(z.shape[0])], z)
 
     def forward(self, x: torch.Tensor):
-        posterior = self.encode(x)
-        z = posterior.sample()
-        out = self.decode(z)
-        return out, posterior
+        # posterior = self.encode(x)
+        moment = self.encode(x)
+        # z = posterior.sample()
+        out = self.decode(moment)
+        # out = self.decode(posterior.mean)
+        # return out, posterior
+        return out
     
     def to(self, device):
         super().to(device)
@@ -195,8 +199,9 @@ class HyperAutoEncoder(nn.Module):
 class ModelEncoder(nn.Module):
     def __init__(self, actor_cfg, z_channels):
         super().__init__()
-        self.dummy_actor = Actor(actor_cfg, obs_shape=actor_cfg.obs_shape[0], action_shape=actor_cfg.action_shape)
-        
+        dummy_actor = Actor(actor_cfg, obs_shape=actor_cfg.obs_shape[0], action_shape=actor_cfg.action_shape)
+              
+
         self.channels = [1, 32, 64, 64, 128, 256, 256, 512, 512, 512]
         self.kernel_sizes = [3, 3, 3, 3, 3, 3, 3, 3, 3, 2]
         self.strides = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
@@ -207,21 +212,29 @@ class ModelEncoder(nn.Module):
 
         self.cnns = {}
         total_op_shape = 0
-        for name, param in self.dummy_actor.named_parameters():
+        self.list_of_weight_names = []
+        self.list_of_real_weight_names = []
+        for name, param in dummy_actor.named_parameters():
+
+            self.list_of_real_weight_names.append(name)
+            key_name = "_".join(name.split('.'))
+            self.list_of_weight_names.append(key_name)
 
             if 'weight' in name:
                 shape = (1,1,)+tuple(param.data.shape)
-                self.cnns[name], op_shape = self._create_cnn_backbone(shape)
+                self.cnns[key_name], op_shape = self._create_cnn_backbone(shape)
             
             elif 'bias' in name:
                 shape = (1,1,) + tuple(param.data.shape) + (1,)
-                self.cnns[name], op_shape = self._create_fc_backbone(shape)
+                self.cnns[key_name], op_shape = self._create_fc_backbone(shape)
 
             else:
                 shape = (1,)+tuple(param.data.shape) + (1,)
-                self.cnns[name], op_shape = self._create_fc_backbone(shape)
+                self.cnns[key_name], op_shape = self._create_fc_backbone(shape)
 
             total_op_shape += np.prod(op_shape)
+        
+        self.cnns = nn.ModuleDict(self.cnns)
 
         self.out = nn.Linear(total_op_shape, 8*4*z_channels)
 
@@ -290,17 +303,19 @@ class ModelEncoder(nn.Module):
 
     def forward(self, x):
         outs = []
-        for name, param in self.dummy_actor.named_parameters():
+        for k in range(len(self.list_of_weight_names)):
+            name = self.list_of_weight_names[k]
+            real_name = self.list_of_real_weight_names[k]
             if 'weight' in name:
-                out = self.cnns[name](x[name].unsqueeze(1))
+                out = self.cnns[name](x[real_name].unsqueeze(1))
                 out = out.view(out.size(0), -1)
                 outs.append(out)
             elif 'bias' in name:
-                out = self.cnns[name](x[name].unsqueeze(1))
+                out = self.cnns[name](x[real_name].unsqueeze(1))
                 out = out.view(out.size(0), -1)
                 outs.append(out)
             else:
-                out = self.cnns[name](x[name].unsqueeze(1))
+                out = self.cnns[name](x[real_name].unsqueeze(1))
                 out = out.view(out.size(0), -1)
                 outs.append(out)
 
@@ -311,7 +326,7 @@ class ModelEncoder(nn.Module):
         return x.reshape(-1,8,4,4)
 
     def to(self, device):
-        self.dummy_actor.to(device)
+        # self.dummy_actor.to(device)
         for cnn in self.cnns.values():
             cnn.to(device)
         self.out.to(device)

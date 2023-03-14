@@ -29,12 +29,12 @@ def train_autoencoder():
     model = HyperAutoEncoder(actor_cfg, emb_channels=8, z_channels=4)
     model.to(device)
 
-    optimizer = Adam(model.parameters(), lr=1e-3)
+    optimizer = Adam(model.parameters(), lr=1e-4)
 
     mse_loss_func = torch.nn.MSELoss()
     kl_loss_coef = 1e-6
 
-    model_checkpoint_folder = Path('./checkpoints')
+    model_checkpoint_folder = Path('./checkpoints2')
     model_checkpoint_folder.mkdir(exist_ok=True)
 
     disc_start = 50001
@@ -44,11 +44,13 @@ def train_autoencoder():
     # optimizer2 = Adam(loss_func.discriminator.parameters(), lr=1e-3)
 
 
-    epochs = 100
+    epochs = 1
     global_step = 0
     for epoch in range(epochs):
         print(f'{epoch=}')
         print(f'{global_step=}')
+
+        epoch_loss = 0
 
         for step, batch in enumerate(e_data_loader_train):
             optimizer.zero_grad()
@@ -56,7 +58,8 @@ def train_autoencoder():
             # batch = batch['pixel_values'].to(device)
             batch = batch[0]
 
-            img_out, posterior = model(batch)
+            # img_out, posterior = model(batch)
+            img_out = model(batch)
             # loss = loss_func(batch, img_out, posterior, global_step, 0)
             # loss += loss_func(batch, img_out, posterior, global_step, 1)
             pred_weights_dict = {}
@@ -73,15 +76,19 @@ def train_autoencoder():
                 mse_loss += F.mse_loss(torch.stack(pred_weights_dict[key]), batch[key])
 
             # loss = mse_loss_func(batch, img_out) + kl_loss_coef * posterior.kl().mean()
-            loss = mse_loss + kl_loss_coef * posterior.kl().mean()
+            # loss = mse_loss + kl_loss_coef * posterior.kl().mean()
+            loss = mse_loss 
 
             loss.backward()
-            if step % 100 == 0:
-                print(f'Loss: {loss.item()}')
+            # if step % 100 == 0:
+                # print(f'Loss: {loss.item()}, MSE: {mse_loss.item()}, KL: {posterior.kl().mean().item()}')
+                # print(f'Loss: {loss.item()}, MSE: {mse_loss.item()}')
                 # print(f'grad norm: {grad_norm(model)}')
+            epoch_loss += loss.item()
             optimizer.step()
-            global_step += step
 
+        global_step += step
+        print(f'Epoch: {epoch}, Loss: {loss.item()}, MSE: {epoch_loss/len(e_data_loader_train)}')
     print('Saving final model checkpoint...')
     torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), 'autoencoder.pt'))
 
