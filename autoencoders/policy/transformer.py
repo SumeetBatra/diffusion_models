@@ -15,9 +15,9 @@ class TransformerPolicyAutoencoder(nn.Module):
         :param z_channels: is the number of channels in the embedding space
         """
         super().__init__()
-        self.encoder = TransformerEncoder(channels=2, channel_multipliers=[1, 2, 4, 8], n_resnet_blocks=3, in_channels=1, z_channels=z_channels, use_conv3d=True)
+        self.encoder = TransformerEncoder(channels=2, channel_multipliers=[1, 2, 4, 8], n_resnet_blocks=3, in_channels=1, z_channels=z_channels)
 
-        self.decoder = TransformerDecoder(channels=2, channel_multipliers=[8, 4, 2, 1], n_resnet_blocks=3, out_channels=1, z_channels=z_channels, use_conv3d=True)
+        self.decoder = TransformerDecoder(channels=2, channel_multipliers=[8, 4, 2, 1], n_resnet_blocks=3, out_channels=1, z_channels=z_channels)
 
         # Convolution to map from embedding space to
         # quantized embedding space moments (mean and log variance)

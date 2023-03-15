@@ -9,6 +9,7 @@ from torch.optim import Adam
 from dataset.policy_dataset import ElitesDataset
 from torch.utils.data import DataLoader
 from autoencoders.policy.resnet3d import ResNet3DAutoEncoder
+from autoencoders.policy.transformer import TransformerPolicyAutoencoder
 from RL.actor_critic import Actor
 
 
@@ -23,7 +24,7 @@ def dataset_factory():
     archive_data_path = '/home/sumeet/diffusion_models/data'
     archive_dfs = []
 
-    archive_df_paths = glob.glob(archive_data_path + '/*.pkl')
+    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100*.pkl')
     for path in archive_df_paths:
         with open(path, 'rb') as f:
             archive_df = pickle.load(f)
@@ -40,14 +41,17 @@ def dataset_factory():
 
 def train_autoencoder():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model = ResNet3DAutoEncoder(emb_channels=64, z_channels=32)
-    # model = ConvVAE()
+    model_checkpoint = None
+    model = TransformerPolicyAutoencoder(emb_channels=64, z_channels=32)
+    if model_checkpoint is not None:
+        print(f'Loading model from checkpoint')
+        model.load_state_dict(torch.load(model_checkpoint))
     model.to(device)
 
     optimizer = Adam(model.parameters(), lr=1e-3)
 
     mse_loss_func = torch.nn.MSELoss()
-    kl_loss_coef = 1e-6
+    kl_loss_coef = 1e-4
 
     model_checkpoint_folder = Path('./checkpoints')
     model_checkpoint_folder.mkdir(exist_ok=True)
