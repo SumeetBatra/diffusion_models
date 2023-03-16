@@ -23,7 +23,7 @@ def grad_norm(model):
 
 
 def dataset_factory():
-    archive_data_path = 'data'
+    archive_data_path = '/home/sumeet/diffusion_models/data'
     archive_dfs = []
 
     archive_df_paths = glob.glob(archive_data_path + '/archive*100x100*.pkl')
@@ -41,14 +41,19 @@ def dataset_factory():
     return DataLoader(elite_dataset, batch_size=32, shuffle=True)
 
 
-def mse_loss_from_unpadded_params(policy_in_tensors, policy_out_tensors):
-    mlp_shape = (128, 128, 6)
+def mse_loss_from_unpadded_params(policy_in_tensors, rec_agents):
     bs = policy_in_tensors.shape[0]
-    # first convert the data from padded -> unpadded params tensors
-    gt_actor_params = torch.Tensor([postprocess_model(tensor, mlp_shape) for tensor in policy_in_tensors]).reshape(bs, -1)
-    rec_actor_params = torch.Tensor([postprocess_model(tensor, mlp_shape) for tensor in policy_out_tensors]).reshape(bs, -1)
 
-    return F.mse_loss(gt_actor_params, rec_actor_params)
+    # convert reconstructed actors to params tensor
+    rec_params = np.array([agent.serialize() for agent in rec_agents])
+    rec_params = torch.from_numpy(rec_params).reshape(bs, -1)
+
+    mlp_shape = (128, 128, 6)
+    dummy_agent = Actor(obs_shape=18, action_shape=np.array([6]))
+    # first convert the data from padded -> unpadded params tensors
+    gt_actor_params = torch.Tensor([postprocess_model(dummy_agent, tensor, mlp_shape, return_model=False, deterministic=True) for tensor in policy_in_tensors]).reshape(bs, -1)
+
+    return F.mse_loss(gt_actor_params, rec_params)
 
 
 def train_autoencoder():
@@ -96,7 +101,7 @@ def train_autoencoder():
             loss.backward()
             if step % 100 == 0:
                 print(f'Loss: {loss.item()}')
-                print(f'grad norm: {grad_norm(model)}')
+                # print(f'grad norm: {grad_norm(model)}') TODO: fix this
             optimizer.step()
             global_step += step
 

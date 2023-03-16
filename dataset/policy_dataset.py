@@ -43,14 +43,15 @@ def preprocess_model(model: nn.Module, mlp_shape: Union[list, tuple]):
     return padded_policy
 
 
-def postprocess_model(padded_params: torch.Tensor, mlp_shape: Union[list, tuple], model_in: nn.Module = None):
+def postprocess_model(model_in: nn.Module, padded_params: torch.Tensor, mlp_shape: Union[list, tuple], return_model=True, deterministic=False):
     '''Reconstruct the original policy given the padded policy tensor'''
     largest_layer_size = max(mlp_shape)
     i = 0
     all_params = []
     for name, param in model_in.named_parameters():
         if name == 'actor_logstd':
-            all_params.append(np.zeros(mlp_shape[-1]))
+            if not deterministic:
+                all_params.append(np.zeros(mlp_shape[-1]))
             continue
         if 'weight' in name:
             shape = tuple(param.data.shape)
@@ -72,7 +73,7 @@ def postprocess_model(padded_params: torch.Tensor, mlp_shape: Union[list, tuple]
         all_params.append(actual_params.detach().cpu().numpy().flatten())
         i += 1
     all_params = np.concatenate(all_params).flatten()
-    if model_in is not None:
+    if return_model:
         return model_in.deserialize(all_params)
     return all_params
 
