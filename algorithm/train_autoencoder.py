@@ -23,7 +23,7 @@ def grad_norm(model):
 
 
 def dataset_factory():
-    archive_data_path = '/home/sumeet/diffusion_models/data'
+    archive_data_path = 'data'
     archive_dfs = []
 
     archive_df_paths = glob.glob(archive_data_path + '/archive*100x100*.pkl')

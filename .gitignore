@@ -4,3 +4,4 @@ checkpoints/
 results/
 wandb/
 data/
+.vscode

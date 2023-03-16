@@ -33,7 +33,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
         self.decoder = MLP_GHN(**config, debug_level=0, device=device)
 
         def make_actor():
-            return Actor(obs_shape=18, action_shape=np.array([action_dim]))
+            return Actor(obs_shape=18, action_shape=np.array([action_dim]), deterministic=True)
 
         self.dummy_actor = make_actor
 

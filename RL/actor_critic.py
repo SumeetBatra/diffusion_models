@@ -20,9 +20,10 @@ class Actor(StochasticPolicy):
                  obs_shape: Union[int, tuple],
                  action_shape: np.ndarray,
                  normalize_obs: bool = False,
-                 normalize_returns: bool = False):
+                 normalize_returns: bool = False,
+                 deterministic: bool = False):
         StochasticPolicy.__init__(self, normalize_obs=normalize_obs, obs_shape=obs_shape, normalize_returns=normalize_returns)
-
+        self.deterministic = deterministic
         self.actor_mean = nn.Sequential(
             layer_init(nn.Linear(np.array(obs_shape).prod(), 128)),
             nn.Tanh(),
@@ -31,7 +32,8 @@ class Actor(StochasticPolicy):
             layer_init(nn.Linear(128, np.prod(action_shape)), std=0.01),
         )
 
-        self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(action_shape)))
+        if not self.deterministic:
+            self.actor_logstd = nn.Parameter(torch.zeros(1, np.prod(action_shape)))
 
     def forward(self, x):
         return self.actor_mean(x)
