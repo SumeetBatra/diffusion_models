@@ -1,6 +1,5 @@
 
-from models.ghn import *
-import time
+from models.hyper.ghn import *
 
 from utils.ghn_utils import capacity, default_device
 
@@ -97,7 +96,7 @@ class MLP_GHN(nn.Module):
         self.embed = torch.nn.Embedding(3, hid)
 
         self.shape_enc3 = nn.Linear(1, hid).to(device)
-        self.measure_enc = nn.Linear(2, len(self.model_shape_indicators)).to(device)
+        self.measure_enc = nn.Linear(4096, len(self.model_shape_indicators)).to(device)
         if hypernet == 'gatedgnn':
             self.gnn = GatedGNN(in_features=hid, ve=False)
         elif hypernet == 'mlp':
@@ -133,12 +132,12 @@ class MLP_GHN(nn.Module):
         self.default_node_feat = nn.Parameter(self.default_node_feat, requires_grad=False)
 
     @staticmethod
-    def load(checkpoint_path, config, debug_level=1, device=default_device(), verbose=False):
+    def load(checkpoint_path, config, debug_level=1, device=default_device(), verbose=True):
         state_dict = torch.load(checkpoint_path, map_location=device)
         ghn = MLP_GHN(**config, debug_level=debug_level, device=device).to(device).eval()
         ghn.load_state_dict(state_dict)
-        if verbose:
-            print('GHN with {} parameters loaded from epoch {}.'.format(capacity(ghn)[1], 1234))
+        # if verbose:
+        print('GHN with {} parameters loaded from epoch {}.'.format(capacity(ghn)[1], 1234))
         return ghn
 
     def forward(self, nets_torch, measure):
@@ -158,7 +157,7 @@ class MLP_GHN(nn.Module):
         # x_before_gnn = self.shape_enc(params_map, predict_class_layers=predict_class_layers)
         # x_before_gnn = self.shape_enc2(shape_ind)
         shape_ind = self.model_shape_indicators.repeat(len(nets_torch), 1)
-        enc_measure = self.measure_enc(measure)
+        enc_measure = self.measure_enc(measure.reshape(-1, 4096))
         shape_ind = shape_ind + enc_measure.view(-1, 1)
         x_before_gnn = self.shape_enc3(shape_ind)
 

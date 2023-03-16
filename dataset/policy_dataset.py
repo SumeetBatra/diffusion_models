@@ -43,7 +43,7 @@ def preprocess_model(model: nn.Module, mlp_shape: Union[list, tuple]):
     return padded_policy
 
 
-def postprocess_model(model_in: nn.Module, padded_params: torch.Tensor, mlp_shape: Union[list, tuple]):
+def postprocess_model(padded_params: torch.Tensor, mlp_shape: Union[list, tuple], model_in: nn.Module = None):
     '''Reconstruct the original policy given the padded policy tensor'''
     largest_layer_size = max(mlp_shape)
     i = 0
@@ -72,7 +72,9 @@ def postprocess_model(model_in: nn.Module, padded_params: torch.Tensor, mlp_shap
         all_params.append(actual_params.detach().cpu().numpy().flatten())
         i += 1
     all_params = np.concatenate(all_params).flatten()
-    return model_in.deserialize(all_params)
+    if model_in is not None:
+        return model_in.deserialize(all_params)
+    return all_params
 
 
 class ElitesDataset(Dataset):
@@ -94,10 +96,11 @@ class ElitesDataset(Dataset):
         '''
         archive_df = pandas.concat(archive_dfs)
         params_batch = archive_df.filter(regex='solution*').to_numpy()
+        measures_batch = archive_df.filter(regex='measure*').to_numpy()
         largest_layer_size = max(mlp_shape)
 
         padded_elites = []
-        for params in params_batch:
+        for params, measure in zip(params_batch, measures_batch):
             padded_policy = []
             arr_idx = 0
             for name, param in self.dummy_model.named_parameters():
@@ -122,7 +125,7 @@ class ElitesDataset(Dataset):
                 padded_policy.append(block)
                 arr_idx += length
             padded_policy = torch.stack(padded_policy).unsqueeze(dim=0).type(torch.float32)  # this makes it (1 x depth x largest_layer_size x largest_layer_size)
-            padded_elites.append(padded_policy)
+            padded_elites.append((padded_policy, measure))
         self.elites_list = padded_elites
 
 

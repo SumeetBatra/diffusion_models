@@ -3,13 +3,15 @@ import numpy as np
 import os
 import pickle
 import glob
+import torch.nn.functional as F
 
 from pathlib import Path
 from torch.optim import Adam
-from dataset.policy_dataset import ElitesDataset
+from dataset.policy_dataset import ElitesDataset, postprocess_model
 from torch.utils.data import DataLoader
 from autoencoders.policy.resnet3d import ResNet3DAutoEncoder
 from autoencoders.policy.transformer import TransformerPolicyAutoencoder
+from autoencoders.policy.hypernet import HypernetAutoEncoder
 from RL.actor_critic import Actor
 
 
@@ -39,10 +41,20 @@ def dataset_factory():
     return DataLoader(elite_dataset, batch_size=32, shuffle=True)
 
 
+def mse_loss_from_unpadded_params(policy_in_tensors, policy_out_tensors):
+    mlp_shape = (128, 128, 6)
+    bs = policy_in_tensors.shape[0]
+    # first convert the data from padded -> unpadded params tensors
+    gt_actor_params = torch.Tensor([postprocess_model(tensor, mlp_shape) for tensor in policy_in_tensors]).reshape(bs, -1)
+    rec_actor_params = torch.Tensor([postprocess_model(tensor, mlp_shape) for tensor in policy_out_tensors]).reshape(bs, -1)
+
+    return F.mse_loss(gt_actor_params, rec_actor_params)
+
+
 def train_autoencoder():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_checkpoint = None
-    model = TransformerPolicyAutoencoder(emb_channels=64, z_channels=32)
+    model = HypernetAutoEncoder(emb_channels=8, z_channels=4)
     if model_checkpoint is not None:
         print(f'Loading model from checkpoint')
         model.load_state_dict(torch.load(model_checkpoint))
@@ -50,7 +62,7 @@ def train_autoencoder():
 
     optimizer = Adam(model.parameters(), lr=1e-3)
 
-    mse_loss_func = torch.nn.MSELoss()
+    mse_loss_func = mse_loss_from_unpadded_params
     kl_loss_coef = 1e-4
 
     model_checkpoint_folder = Path('./checkpoints')
@@ -70,15 +82,16 @@ def train_autoencoder():
         print(f'{epoch=}')
         print(f'{global_step=}')
 
-        for step, batch in enumerate(dataloader):
+        for step, (policies, measures) in enumerate(dataloader):
             optimizer.zero_grad()
 
-            batch = batch.to(device)
+            policies = policies.to(device)
+            measures = measures.to(device)
 
-            img_out, posterior = model(batch)
+            rec_policies, posterior = model(policies)
             # loss = loss_func(batch, img_out, posterior, global_step, 0)
             # loss += loss_func(batch, img_out, posterior, global_step, 1)
-            loss = mse_loss_func(batch, img_out) + kl_loss_coef * posterior.kl().mean()
+            loss = mse_loss_func(policies, rec_policies) + kl_loss_coef * posterior.kl().mean()
 
             loss.backward()
             if step % 100 == 0:
