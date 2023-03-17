@@ -22,6 +22,7 @@ def preprocess_model(model: nn.Module, mlp_shape: Union[list, tuple]):
             arr_idx += mlp_shape[-1]
             continue
         if 'weight' in name:
+            weight_cols = param.data.shape[1]
             shape = tuple(param.data.shape)
             length = np.product(shape)
             block = params[arr_idx: arr_idx + length]
@@ -30,7 +31,7 @@ def preprocess_model(model: nn.Module, mlp_shape: Union[list, tuple]):
             # bias term
             orig_shape = length = param.data.shape[0]
             block = params[arr_idx: arr_idx + length]
-            block = torch.from_numpy(block).repeat(orig_shape).reshape(orig_shape, orig_shape)
+            block = torch.from_numpy(block).view(-1, 1).repeat((1, weight_cols)).reshape(orig_shape, weight_cols)
             shape = tuple(block.shape)
             # pad all sides of the weight matrix so that the final shape is (largest_layer_size x largest_layer_size)
         padding = ((largest_layer_size - shape[1]) // 2, (largest_layer_size - shape[1]) // 2,
@@ -54,7 +55,7 @@ def postprocess_model(model_in: nn.Module, padded_params: torch.Tensor, mlp_shap
                 all_params.append(np.zeros(mlp_shape[-1]))
             continue
         if 'weight' in name:
-            shape = tuple(param.data.shape)
+            shape = weight_shape = tuple(param.data.shape)
             padding = ((largest_layer_size - shape[0]) // 2, (largest_layer_size - shape[0]) // 2,
                        (largest_layer_size - shape[1]) // 2, (largest_layer_size - shape[1]) // 2)
             layer = padded_params[0][i]
@@ -63,12 +64,15 @@ def postprocess_model(model_in: nn.Module, padded_params: torch.Tensor, mlp_shap
                             padding[2]:padding[2] + param.data.shape[1]]
         else:
             # bias term
-            shape = param.data.shape[0]
-            padding = ((largest_layer_size - shape) // 2, (largest_layer_size - shape) // 2,
-                       (largest_layer_size - shape) // 2, (largest_layer_size - shape) // 2)
+            shape = weight_shape
+            padding = ((largest_layer_size - shape[0]) // 2, (largest_layer_size - shape[0]) // 2,
+                       (largest_layer_size - shape[1]) // 2, (largest_layer_size - shape[1]) // 2)
             layer = padded_params[0][i]
 
-            actual_params = layer[0][padding[0]:padding[0] + shape]
+            if padding[0] != 0:
+                actual_params = layer[padding[0]: padding[0] + shape[0], padding[0]]
+            else:
+                actual_params = layer[:, padding[2]]
 
         all_params.append(actual_params.detach().cpu().numpy().flatten())
         i += 1
@@ -109,6 +113,7 @@ class ElitesDataset(Dataset):
                     arr_idx += mlp_shape[-1]
                     continue
                 if 'weight' in name:
+                    weight_cols = param.data.shape[1]
                     shape = tuple(param.data.shape)
                     length = np.product(shape)
                     block = params[arr_idx: arr_idx + length]
@@ -117,7 +122,7 @@ class ElitesDataset(Dataset):
                     # bias term
                     orig_shape = length = param.data.shape[0]
                     block = params[arr_idx: arr_idx + length]
-                    block = torch.from_numpy(block).repeat(orig_shape).reshape(orig_shape, orig_shape)
+                    block = torch.from_numpy(block).view(-1, 1).repeat((1, weight_cols)).reshape(orig_shape, weight_cols)
                     shape = tuple(block.shape)
                 # pad all sides of the weight matrix so that the final shape is (largest_layer_size x largest_layer_size)
                 padding = ((largest_layer_size - shape[1]) // 2, (largest_layer_size - shape[1]) // 2,
