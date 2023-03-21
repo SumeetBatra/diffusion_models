@@ -48,6 +48,17 @@ class DownSample(nn.Module):
         return self.conv(x)
 
 
+class DownSample2D(nn.Module):
+    '''Downsample the channels only, not the depth'''
+    def __init__(self, channels: int):
+        super().__init__()
+        self.conv = nn.Conv3d(channels, channels, kernel_size=3, stride=(1, 2, 2), padding=(1, 0, 0))
+
+    def forward(self, x: torch.Tensor):
+        x = F.pad(x, (0, 1, 0, 1), mode='constant', value=0)
+        return self.conv(x)
+
+
 class Encoder(nn.Module):
     def __init__(self, *, channels: int, channel_multipliers: List[int], n_resnet_blocks: int,
                  in_channels: int, z_channels: int):
@@ -82,7 +93,7 @@ class Encoder(nn.Module):
             down = nn.Module()
             down.block = resnet_blocks
             if i != n_resolutions - 1:
-                down.downsample = DownSample(channels)
+                down.downsample = DownSample(channels) if i < 2 else DownSample2D(channels)
             else:
                 down.downsample = nn.Identity()
             self.down.append(down)

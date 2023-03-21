@@ -51,7 +51,8 @@ def mse_loss_from_unpadded_params(policy_in_tensors, rec_agents):
     mlp_shape = (128, 128, 6)
     dummy_agent = Actor(obs_shape=18, action_shape=np.array([6]))
     # first convert the data from padded -> unpadded params tensors
-    gt_actor_params = torch.Tensor([postprocess_model(dummy_agent, tensor, mlp_shape, return_model=False, deterministic=True) for tensor in policy_in_tensors]).reshape(bs, -1)
+    params_numpy = np.array([postprocess_model(dummy_agent, tensor, mlp_shape, return_model=False, deterministic=True) for tensor in policy_in_tensors])
+    gt_actor_params = torch.from_numpy(params_numpy).reshape(bs, -1)
 
     return F.mse_loss(gt_actor_params, rec_params)
 
@@ -59,7 +60,7 @@ def mse_loss_from_unpadded_params(policy_in_tensors, rec_agents):
 def train_autoencoder():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_checkpoint = None
-    model = HypernetAutoEncoder(emb_channels=8, z_channels=4)
+    model = ResNet3DAutoEncoder(emb_channels=8, z_channels=4)
     if model_checkpoint is not None:
         print(f'Loading model from checkpoint')
         model.load_state_dict(torch.load(model_checkpoint))
@@ -67,7 +68,7 @@ def train_autoencoder():
 
     optimizer = Adam(model.parameters(), lr=1e-3)
 
-    mse_loss_func = mse_loss_from_unpadded_params
+    mse_loss_func = torch.nn.L1Loss()
     kl_loss_coef = 1e-4
 
     model_checkpoint_folder = Path('./checkpoints')

@@ -16,7 +16,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
         """
         AutoEncoderBase.__init__(self, emb_channels, z_channels)
 
-        self.encoder = Resnet3DEncoder(channels=2, channel_multipliers=[1, 2, 4], n_resnet_blocks=3, in_channels=1,
+        self.encoder = Resnet3DEncoder(channels=2, channel_multipliers=[1, 2, 4, 8, 8, 8], n_resnet_blocks=4, in_channels=1,
                                        z_channels=z_channels)
 
         # config dict for the hypernet decoder
