@@ -135,6 +135,27 @@ class ElitesDataset(Dataset):
         self.elites_list = padded_elites
 
 
+class ShapedEliteDataset(Dataset):
+    def __init__(self, archive_dfs: list[DataFrame], obs_dim, action_shape, device):
+        archive_df = pandas.concat(archive_dfs)
+        self.elites_list = archive_df.filter(regex='solution*').to_numpy()
+        self.measures_list = archive_df.filter(regex='measure*').to_numpy()
+        self.obs_dim = obs_dim
+        self.action_shape = action_shape
+        self.device = device
+
+    def __len__(self):
+        return self.elites_list.shape[0]
+
+    def __getitem__(self, item):
+        params, measures = self.elites_list[item], self.measures_list[item]
+        weights_dict = Actor(self.obs_dim, self.action_shape, True, True).to(self.device).get_deserialized_weights(params)
+        return weights_dict, measures
+
+
+
+
+
 if __name__ == '__main__':
     archive_df_path = '/home/sumeet/QDPPO/experiments/paper_qdppo_halfcheetah/1111/checkpoints/cp_00002000/archive_00002000.pkl'
     with open(archive_df_path, 'rb') as f:
