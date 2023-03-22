@@ -9,7 +9,14 @@ from typing import Union
 from pandas import DataFrame
 from torch.utils.data import Dataset, DataLoader
 from RL.actor_critic import Actor
+from ribs.archives._elite import EliteBatch
+from tqdm import tqdm
 
+
+def readonly(arr):
+    """Sets an array to be readonly."""
+    arr.flags.writeable = False
+    return arr
 
 def preprocess_model(model: nn.Module, mlp_shape: Union[list, tuple]):
     '''Performs the same ops as ElitesDataset._preprocess_data(), except on a single model'''
@@ -136,23 +143,73 @@ class ElitesDataset(Dataset):
 
 
 class ShapedEliteDataset(Dataset):
-    def __init__(self, archive_dfs: list[DataFrame], obs_dim, action_shape, device):
+    def __init__(self, archive_dfs: list[DataFrame], obs_dim, action_shape, device, scheduler=None):
         archive_df = pandas.concat(archive_dfs)
-        self.elites_list = archive_df.filter(regex='solution*').to_numpy()
-        self.measures_list = archive_df.filter(regex='measure*').to_numpy()
+        
+        self.read_scheduler = True if scheduler is not None else False
+
         self.obs_dim = obs_dim
         self.action_shape = action_shape
         self.device = device
 
+        if self.read_scheduler:
+            total_number_of_elites = scheduler.archive._num_occupied
+            all_indices = np.arange(total_number_of_elites)
+            self.elites = EliteBatch(
+                readonly(scheduler.archive._solution_arr[all_indices]),
+                readonly(scheduler.archive._objective_arr[all_indices]),
+                readonly(scheduler.archive._measures_arr[all_indices]),
+                readonly(all_indices),
+                readonly(scheduler.archive._metadata_arr[all_indices]),
+            )
+            self._get_all_elite()
+            # print('elite list length', len(self.elites_list))
+
+        else:
+            self.elites_list = archive_df.filter(regex='solution*').to_numpy()
+            self.measures_list = archive_df.filter(regex='measure*').to_numpy()
+        
+
     def __len__(self):
-        return self.elites_list.shape[0]
+        if self.read_scheduler:
+            return len(self.elites_list)
+        else:
+            return self.elites_list.shape[0]
 
     def __getitem__(self, item):
-        params, measures = self.elites_list[item], self.measures_list[item]
-        weights_dict = Actor(self.obs_dim, self.action_shape, True, True).to(self.device).get_deserialized_weights(params)
+        if self.read_scheduler:
+            weights_dict, measures = self.elites_list[item]
+        else:
+            params, measures = self.elites_list[item], self.measures_list[item]
+            weights_dict = Actor(self.obs_dim, self.action_shape, True, True).to(self.device).get_deserialized_weights(params)
+
         return weights_dict, measures
 
+    def _get_all_elite(self):
+        self.elites_list = []
+        for i in tqdm(range(len(self.elites.solution_batch))):
+            params = self.elites.solution_batch[i].flatten()
+            weights_dict = Actor(self.obs_dim, self.action_shape, True, True) \
+                .to(self.device).get_deserialized_weights(params)
+            
+            elite_measure = self.elites.measures_batch[i]
 
+            # convert elite_measure to float 32
+            elite_measure = torch.tensor(elite_measure, dtype=torch.float32)
+
+            elite_measure = elite_measure.to(self.device)
+
+            if torch.isinf(elite_measure).any().item() \
+                or torch.max(elite_measure) > 1 \
+                    or torch.min(elite_measure) < 0 \
+                        or self.elites.metadata_batch[i] is None:
+                continue
+            else:
+                obs_normalizer = self.elites.metadata_batch[i]['obs_normalizer']
+                weights_dict['rms_mean'] = obs_normalizer.obs_rms.mean
+                weights_dict['rms_var'] = obs_normalizer.obs_rms.var
+                weights_dict['rms_count'] = obs_normalizer.obs_rms.count
+                self.elites_list.append((weights_dict, elite_measure))
 
 
 
