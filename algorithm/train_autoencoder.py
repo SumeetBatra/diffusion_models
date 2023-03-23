@@ -15,6 +15,7 @@ from autoencoders.policy.hypernet import HypernetAutoEncoder
 from RL.actor_critic import Actor
 from envs.brax_custom.brax_env import make_vec_env_brax
 from attrdict import AttrDict
+import scipy.stats as stats
 
 
 def grad_norm(model):
@@ -94,16 +95,16 @@ def mse_loss_from_unpadded_params(policy_in_tensors, rec_agents):
 def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor]):
     # convert the rec_agents (Actors) into a dict of weights
     pred_weights_dict = {}
-    pred_weights_dict['rms_mean'] = []
-    pred_weights_dict['rms_var'] = []
+    # pred_weights_dict['rms_mean'] = []
+    # pred_weights_dict['rms_var'] = []
     for agent in rec_agents:
         for name, param in agent.named_parameters():
             if name not in pred_weights_dict:
                 pred_weights_dict[name] = []
             pred_weights_dict[name].append(param)
 
-        pred_weights_dict['rms_mean'].append(agent.obs_normalizer.obs_rms.mean)
-        pred_weights_dict['rms_var'].append(agent.obs_normalizer.obs_rms.var)
+        # pred_weights_dict['rms_mean'].append(agent.obs_normalizer.obs_rms.mean)
+        # pred_weights_dict['rms_var'].append(agent.obs_normalizer.obs_rms.var)
 
     # calculate the loss
     loss = 0
@@ -190,49 +191,57 @@ def train_autoencoder():
             # get next batch of policies
             eval_params, eval_measure = next(iter(dataloader))
             agent = Actor(obs_dim, action_shape, True, True)
-
-            actor_weights = {key:eval_params[key][0] for key in eval_params.keys() if 'actor' in key}
-            actor_weights['obs_normalizer.obs_rms.mean'] = eval_params['rms_mean'][0]
-            actor_weights['obs_normalizer.obs_rms.var'] = eval_params['rms_var'][0]
-            actor_weights['obs_normalizer.obs_rms.count'] = eval_params['rms_count'][0]
-
-            actor_weights['return_normalizer.return_rms.mean'] = agent.return_normalizer.return_rms.mean
-            actor_weights['return_normalizer.return_rms.var'] = agent.return_normalizer.return_rms.var
-            actor_weights['return_normalizer.return_rms.count'] = agent.return_normalizer.return_rms.count
-
-            agent.load_state_dict(actor_weights)
-            agent.to(device)
-            print(f'Sampled measure from elite: {eval_measure[0]}')
-            print("Running an elite policy from the dataset...")
-            total_rewards = []
-            true_eval_measures = []
-            for l in range(20):
-                total_reward, true_eval_measure = enjoy_brax(agent, env, env_cfg, device)
-                total_rewards.append(total_reward)
-                true_eval_measures.append(true_eval_measure)
-
-            print(f'Average reward: {np.mean(total_rewards)}, std: {np.std(total_rewards)}')
-            print(f'Average true measure: {np.mean(true_eval_measures, axis=0)}, std: {np.std(true_eval_measures, axis=0)}')
-
             rec_policies, posterior = model(eval_params)
+            avg_p_values = np.zeros((1,2))
+            avg_orig_rewards = 0
+            avg_rec_rewards = 0
+            for i in range(5): 
+                actor_weights = {key:eval_params[key][i] for key in eval_params.keys() if 'actor' in key}
+                actor_weights['obs_normalizer.obs_rms.mean'] = eval_params['rms_mean'][i]
+                actor_weights['obs_normalizer.obs_rms.var'] = eval_params['rms_var'][i]
+                actor_weights['obs_normalizer.obs_rms.count'] = eval_params['rms_count'][i]
 
-            # agent.actor_mean = rec_policies[0].actor_mean
-            agent = rec_policies[0]
-            print("Running a policy from the autoencoder...")
+                actor_weights['return_normalizer.return_rms.mean'] = agent.return_normalizer.return_rms.mean
+                actor_weights['return_normalizer.return_rms.var'] = agent.return_normalizer.return_rms.var
+                actor_weights['return_normalizer.return_rms.count'] = agent.return_normalizer.return_rms.count
 
-            total_rewards = []
-            true_eval_measures = []
-            for l in range(20):
-                total_reward, true_eval_measure = enjoy_brax(agent, env, env_cfg, device)
-                total_rewards.append(total_reward)
-                true_eval_measures.append(true_eval_measure)
+                agent.load_state_dict(actor_weights)
+                agent.to(device)
+                # print(f'Sampled measure from elite: {eval_measure[i]}')
+                # print("Running an elite policy from the dataset...")
+                total_rewards = []
+                true_eval_measures = []
+                for l in range(5):
+                    total_reward, true_eval_measure = enjoy_brax(agent, env, env_cfg, device)
+                    total_rewards.append(total_reward)
+                    true_eval_measures.append(true_eval_measure)
 
-            print(f'Average reward: {np.mean(total_rewards)}, std: {np.std(total_rewards)}')
-            print(f'Average true measure: {np.mean(true_eval_measures, axis=0)}, std: {np.std(true_eval_measures, axis=0)}')
+                # print(f'Average reward: {np.mean(total_rewards)}, std: {np.std(total_rewards)}')
+                avg_orig_rewards += np.mean(total_rewards)
 
+                agent.actor_mean = rec_policies[i].actor_mean
+                # agent = rec_policies[i]
+                # print("Running a policy from the autoencoder...")
 
-        print(f'{epoch=}')
-        print(f'{global_step=}')
+                recon_total_rewards = []
+                recon_true_eval_measures = []
+                for l in range(5):
+                    total_reward, true_eval_measure = enjoy_brax(agent, env, env_cfg, device)
+                    recon_total_rewards.append(total_reward)
+                    recon_true_eval_measures.append(true_eval_measure)
+
+                # print(f'Average reward: {np.mean(recon_total_rewards)}, std: {np.std(recon_total_rewards)}')
+                avg_rec_rewards += np.mean(recon_total_rewards)
+
+                result = stats.ttest_ind(true_eval_measures, recon_true_eval_measures, equal_var = False)
+                avg_p_values += result.pvalue
+            print(f'Avg original reward: {avg_orig_rewards/5}')
+            print(f'Avg reconstructed reward: {avg_rec_rewards/5}')
+            print(f'T-test p-value: {avg_p_values/5}')
+            print("--------------------------------------------------------------------")
+
+        # print(f'{epoch=}')
+        # print(f'{global_step=}')
         epoch_mse_loss = 0
         epoch_kl_loss = 0        
 
