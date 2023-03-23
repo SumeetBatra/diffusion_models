@@ -94,11 +94,16 @@ def mse_loss_from_unpadded_params(policy_in_tensors, rec_agents):
 def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor]):
     # convert the rec_agents (Actors) into a dict of weights
     pred_weights_dict = {}
+    pred_weights_dict['rms_mean'] = []
+    pred_weights_dict['rms_var'] = []
     for agent in rec_agents:
         for name, param in agent.named_parameters():
             if name not in pred_weights_dict:
                 pred_weights_dict[name] = []
             pred_weights_dict[name].append(param)
+
+        pred_weights_dict['rms_mean'].append(agent.obs_normalizer.obs_rms.mean)
+        pred_weights_dict['rms_var'].append(agent.obs_normalizer.obs_rms.var)
 
     # calculate the loss
     loss = 0
@@ -176,7 +181,7 @@ def train_autoencoder():
     # optimizer2 = Adam(loss_func.discriminator.parameters(), lr=1e-3)
 
 
-    epochs = 20
+    epochs = 61
     global_step = 0
     for epoch in range(epochs):
 
@@ -211,7 +216,8 @@ def train_autoencoder():
 
             rec_policies, posterior = model(eval_params)
 
-            agent.actor_mean = rec_policies[0].actor_mean
+            # agent.actor_mean = rec_policies[0].actor_mean
+            agent = rec_policies[0]
             print("Running a policy from the autoencoder...")
 
             total_rewards = []

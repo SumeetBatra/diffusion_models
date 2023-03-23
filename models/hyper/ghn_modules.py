@@ -70,6 +70,7 @@ class MLP_GHN(nn.Module):
                  layernorm=False,
                  hid=32,
                  device='cuda',
+                 norm_variables = True,
                  model_shape=[128, 128],
                  debug_level=0):
         super(MLP_GHN, self).__init__()
@@ -81,6 +82,7 @@ class MLP_GHN(nn.Module):
         self.debug_level = debug_level
         self.num_classes = num_classes
         self.model_shape = model_shape
+        self.norm_variables = norm_variables
 
         self.model_shape_indicators = [torch.tensor(0).type(torch.FloatTensor).to(device)]
         for l in self.model_shape:
@@ -131,6 +133,19 @@ class MLP_GHN(nn.Module):
         self.default_node_feat = torch.zeros(50).long().to(device)
         self.default_node_feat = nn.Parameter(self.default_node_feat, requires_grad=False)
 
+        if self.norm_variables:
+            self.norm_mlp = nn.Sequential(
+                nn.Linear(64, 64),
+            )
+            self.norm_mean = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(64, num_observations)
+            )
+            self.norm_var = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(64, num_observations)
+            )
+
     @staticmethod
     def load(checkpoint_path, config, debug_level=1, device=default_device(), verbose=True):
         state_dict = torch.load(checkpoint_path, map_location=device)
@@ -149,6 +164,14 @@ class MLP_GHN(nn.Module):
 
         predict_class_layers = True
         bn_train = True
+
+        if self.norm_variables:
+            norm_variables = self.norm_mlp(measure.reshape(-1, 64))
+            norm_mean = self.norm_mean(norm_variables)
+            norm_var = self.norm_var(norm_variables)
+            for k, net in enumerate(nets_torch):
+                net.obs_normalizer.obs_rms.mean = norm_mean[k]
+                net.obs_normalizer.obs_rms.var = norm_var[k]
 
         param_groups, params_map = self._map_net_params(nets_torch, self.debug_level > 0)
         # param_groups1, params_map1 = self._map_net_params(nets_torch[0], self.debug_level > 0)

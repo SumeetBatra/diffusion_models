@@ -34,7 +34,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
         self.decoder = MLP_GHN(**config, debug_level=0, device=device)
 
         def make_actor():
-            return Actor(obs_shape=18, action_shape=np.array([action_dim]), deterministic=True)
+            return Actor(obs_shape=18, action_shape=np.array([action_dim]), deterministic=True, normalize_obs=True)
 
         self.dummy_actor = make_actor
 
@@ -50,9 +50,11 @@ class HypernetAutoEncoder(AutoEncoderBase):
 
 
 class ModelEncoder(nn.Module):
-    def __init__(self, obs_shape, action_shape, z_channels):
+    def __init__(self, obs_shape, action_shape, z_channels, obs_norm = True):
         super().__init__()
-        dummy_actor = Actor(obs_shape=obs_shape, action_shape=action_shape, normalize_obs=True, normalize_returns=True)
+
+        self.obs_norm = obs_norm
+        dummy_actor = Actor(obs_shape=obs_shape, action_shape=action_shape, normalize_obs=self.obs_norm, normalize_returns=True)
 
         self.channels = [1, 32, 64, 64, 128, 256, 256, 512, 512, 512]
         self.kernel_sizes = [3, 3, 3, 3, 3, 3, 3, 3, 3, 2]
@@ -84,6 +86,14 @@ class ModelEncoder(nn.Module):
                 shape = (1,) + tuple(param.data.shape) + (1,)
                 self.cnns[key_name], op_shape = self._create_fc_backbone(shape)
 
+            total_op_shape += np.prod(op_shape)
+
+        if self.obs_norm:
+            shape = (1, 1,) + tuple(dummy_actor.obs_normalizer.obs_rms.mean.shape) + (1,)
+            self.cnns['rms_mean'], op_shape = self._create_fc_backbone(shape)
+            total_op_shape += np.prod(op_shape)
+            shape = (1, 1,) + tuple(dummy_actor.obs_normalizer.obs_rms.var.shape) + (1,)
+            self.cnns['rms_var'], op_shape = self._create_fc_backbone(shape)
             total_op_shape += np.prod(op_shape)
 
         self.cnns = nn.ModuleDict(self.cnns)
@@ -167,6 +177,14 @@ class ModelEncoder(nn.Module):
                 out = self.cnns[name](x[real_name].unsqueeze(1))
                 out = out.view(out.size(0), -1)
                 outs.append(out)
+        
+        if self.obs_norm:
+            out = self.cnns['rms_mean'](x['rms_mean'].unsqueeze(1))
+            out = out.view(out.size(0), -1)
+            outs.append(out)
+            out = self.cnns['rms_var'](x['rms_var'].unsqueeze(1))
+            out = out.view(out.size(0), -1)
+            outs.append(out)
 
         x = torch.cat(outs, dim=1)
         x = self.out(x)
