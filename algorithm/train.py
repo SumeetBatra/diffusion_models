@@ -3,6 +3,8 @@ import numpy as np
 import os
 import argparse
 import wandb
+import glob
+import pickle
 import matplotlib.pyplot as plt
 
 from attrdict import AttrDict
@@ -10,10 +12,10 @@ from distutils.util import strtobool
 from pathlib import Path
 from utils.utilities import config_wandb, save_cfg
 from torch.optim import AdamW
-from torchvision.utils import save_image
+from torch.utils.data import DataLoader
 from models.unet import num_to_groups, Unet
-from autoencoders.transformer_autoencoder import AutoEncoder
-from dataset.mnist_fashion_dataset import dataloader
+from autoencoders.policy.hypernet import HypernetAutoEncoder as AutoEncoder
+from dataset.policy_dataset import ShapedEliteDataset
 from diffusion.gaussian_diffusion import GaussianDiffusion, cosine_beta_schedule, linear_beta_schedule
 from diffusion.latent_diffusion import LatentDiffusion
 
@@ -29,6 +31,23 @@ def parse_args():
     args = parser.parse_args()
     cfg = AttrDict(vars(args))
     return cfg
+
+
+def shaped_elites_dataset_factory():
+    archive_data_path = '/home/sumeet/diffusion_models/data'
+    archive_dfs = []
+
+    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100*.pkl')
+    for path in archive_df_paths:
+        with open(path, 'rb') as f:
+            archive_df = pickle.load(f)
+            archive_dfs.append(archive_df)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), device=device)
+
+    return DataLoader(s_elite_dataset, batch_size=32, shuffle=True)
 
 
 def grad_norm(model):
@@ -62,7 +81,7 @@ def train(cfg):
 
     image_size = 32
     channels = 1
-    batch_size = 128
+    batch_size = 32
 
     timesteps = 600
     betas = cosine_beta_schedule(timesteps)
@@ -98,18 +117,20 @@ def train(cfg):
 
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
+    dataloader = shaped_elites_dataset_factory()
+
     epochs = 20
     scale_factor = 1.0
     for epoch in range(epochs):
-        for step, batch in enumerate(dataloader):
+        for step, (policies, measures) in enumerate(dataloader):
             optimizer.zero_grad()
+            batch_size = measures.shape[0]
 
-            batch_size = batch['pixel_values'].shape[0]
-            batch = batch['pixel_values'].to(device)
+            measures = measures.to(device)
 
             if cfg.latent_diffusion:
                 with torch.no_grad():
-                    batch = autoencoder.encode(batch).sample().detach()
+                    batch = autoencoder.encode(policies).sample().detach()
                     # rescale the embeddings to be unit variance -- on first batch only
                     if epoch == 0 and step == 0:
                         print("Calculating scale factor...")
@@ -138,20 +159,6 @@ def train(cfg):
                     'data/batch_mean': batch.mean().item(),
                     'data/batch_var': batch.var().item(),
                 })
-
-            # save generated images
-            if step != 0 and step % save_and_sample_every == 0:
-                print('Sampling...')
-                milestone = step // save_and_sample_every
-                batches = num_to_groups(4, batch_size)
-                all_images_list = list(map(lambda n: gauss_diff.sample(model,
-                                                            image_size=image_size,
-                                                            batch_size=n,
-                                                            channels=channels),
-                                           batches))
-                all_images = torch.cat(all_images_list[0], dim=0)
-                all_images = (all_images + 1) * 0.5
-                save_image(all_images, str(results_folder / f'sample-{milestone}.png'), nrow=6)
 
     print('Saving final model checkpoint...')
     torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), 'model_cp.pt'))
