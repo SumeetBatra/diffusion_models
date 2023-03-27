@@ -6,7 +6,7 @@
 #SBATCH --output=tmp/dm-%j.log
 
 # env setup
-seed=333
+seed=888
 # train
 
 srun \
