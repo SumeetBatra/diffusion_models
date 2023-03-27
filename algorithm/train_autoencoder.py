@@ -150,7 +150,7 @@ def enjoy_brax(agent, env, env_cfg, device, deterministic=True):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
-    parser.add_argument('--num_epochs', type=int, default=100)
+    parser.add_argument('--num_epochs', type=int, default=1000)
     parser.add_argument('--seed', type=int, default=0)
 
     args = parser.parse_args()
@@ -214,6 +214,11 @@ def train_autoencoder():
     # loss_func = LPIPSWithDiscriminator(disc_start, kl_weight=kl_weight, disc_weight=disc_weight)
     # optimizer2 = Adam(loss_func.discriminator.parameters(), lr=1e-3)
 
+    # architectures to evaluate
+    num_evals = 10
+
+    # number of episodes to evaluate
+    num_eval_episodes = 5
 
     epochs = args.num_epochs
     global_step = 0
@@ -228,7 +233,7 @@ def train_autoencoder():
             avg_p_values = np.zeros((1,2))
             avg_orig_rewards = 0
             avg_rec_rewards = 0
-            for i in range(5): 
+            for i in range(num_evals): 
                 actor_weights = {key:eval_params[key][i] for key in eval_params.keys() if 'actor' in key}
                 actor_weights['obs_normalizer.obs_rms.mean'] = eval_params['rms_mean'][i]
                 actor_weights['obs_normalizer.obs_rms.var'] = eval_params['rms_var'][i]
@@ -244,7 +249,7 @@ def train_autoencoder():
                 # print("Running an elite policy from the dataset...")
                 total_rewards = []
                 true_eval_measures = []
-                for l in range(5):
+                for l in range(num_eval_episodes):
                     total_reward, true_eval_measure = enjoy_brax(agent, env, env_cfg, device)
                     total_rewards.append(total_reward)
                     true_eval_measures.append(true_eval_measure)
@@ -258,7 +263,7 @@ def train_autoencoder():
 
                 recon_total_rewards = []
                 recon_true_eval_measures = []
-                for l in range(5):
+                for l in range(num_eval_episodes):
                     total_reward, true_eval_measure = enjoy_brax(agent, env, env_cfg, device)
                     recon_total_rewards.append(total_reward)
                     recon_true_eval_measures.append(true_eval_measure)
@@ -268,17 +273,17 @@ def train_autoencoder():
 
                 result = stats.ttest_ind(true_eval_measures, recon_true_eval_measures, equal_var = False)
                 avg_p_values += result.pvalue
-            print(f'Avg original reward: {avg_orig_rewards/5}')
-            print(f'Avg reconstructed reward: {avg_rec_rewards/5}')
-            print(f'T-test p-value: {avg_p_values/5}')
-            writer.add_scalar('Rewards/original', avg_orig_rewards/5, global_step+1)
-            wandb.log({'Rewards/original': avg_orig_rewards/5, 'global_step': global_step+1})
-            writer.add_scalar('Rewards/reconstructed', avg_rec_rewards/5, global_step+1)
-            wandb.log({'Rewards/reconstructed': avg_rec_rewards/5, 'global_step': global_step+1})
-            writer.add_scalar('dist_shift/p-value_0', avg_p_values[0,0]/5, global_step+1)
-            wandb.log({'dist_shift/p-value_0': avg_p_values[0,0]/5, 'global_step': global_step+1})
-            writer.add_scalar('dist_shift/p-value_1', avg_p_values[0,1]/5, global_step+1)
-            wandb.log({'dist_shift/p-value_1': avg_p_values[0,1]/5, 'global_step': global_step+1})
+            print(f'Avg original reward: {avg_orig_rewards/num_evals}')
+            print(f'Avg reconstructed reward: {avg_rec_rewards/num_evals}')
+            print(f'T-test p-value: {avg_p_values/num_evals}')
+            writer.add_scalar('Rewards/original', avg_orig_rewards/num_evals, global_step+1)
+            wandb.log({'Rewards/original': avg_orig_rewards/num_evals, 'global_step': global_step+1})
+            writer.add_scalar('Rewards/reconstructed', avg_rec_rewards/num_evals, global_step+1)
+            wandb.log({'Rewards/reconstructed': avg_rec_rewards/num_evals, 'global_step': global_step+1})
+            writer.add_scalar('dist_shift/p-value_0', avg_p_values[0,0]/num_evals, global_step+1)
+            wandb.log({'dist_shift/p-value_0': avg_p_values[0,0]/num_evals, 'global_step': global_step+1})
+            writer.add_scalar('dist_shift/p-value_1', avg_p_values[0,1]/num_evals, global_step+1)
+            wandb.log({'dist_shift/p-value_1': avg_p_values[0,1]/num_evals, 'global_step': global_step+1})
             print("--------------------------------------------------------------------")
 
         # print(f'{epoch=}')
