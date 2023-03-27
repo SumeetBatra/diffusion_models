@@ -20,8 +20,7 @@ import wandb
 from datetime import datetime
 import argparse
 import random
-from tensorboardX import SummaryWriter
-
+from torch.utils.tensorboard import SummaryWriter
 def grad_norm(model):
     sqsum = 0.0
     for p in model.parameters():
@@ -273,8 +272,13 @@ def train_autoencoder():
             print(f'Avg reconstructed reward: {avg_rec_rewards/5}')
             print(f'T-test p-value: {avg_p_values/5}')
             writer.add_scalar('Rewards/original', avg_orig_rewards/5, global_step+1)
+            wandb.log({'Rewards/original': avg_orig_rewards/5, 'global_step': global_step+1})
             writer.add_scalar('Rewards/reconstructed', avg_rec_rewards/5, global_step+1)
-            writer.add_scalar('dist_shift/p-value', avg_p_values/5, global_step+1)
+            wandb.log({'Rewards/reconstructed': avg_rec_rewards/5, 'global_step': global_step+1})
+            writer.add_scalar('dist_shift/p-value_0', avg_p_values[0,0]/5, global_step+1)
+            wandb.log({'dist_shift/p-value_0': avg_p_values[0,0]/5, 'global_step': global_step+1})
+            writer.add_scalar('dist_shift/p-value_1', avg_p_values[0,1]/5, global_step+1)
+            wandb.log({'dist_shift/p-value_1': avg_p_values[0,1]/5, 'global_step': global_step+1})
             print("--------------------------------------------------------------------")
 
         # print(f'{epoch=}')
@@ -308,7 +312,8 @@ def train_autoencoder():
         print(f'Epoch {epoch} MSE Loss: {epoch_mse_loss / len(dataloader)}')
         writer.add_scalar("Loss/mse_loss", epoch_mse_loss / len(dataloader), global_step+1)
         writer.add_scalar("Loss/kl_loss", epoch_kl_loss / len(dataloader), global_step+1)
-
+        wandb.log({'Loss/mse_loss': epoch_mse_loss / len(dataloader), "global_step": global_step+1})
+        wandb.log({'Loss/kl_loss': epoch_kl_loss / len(dataloader), "global_step": global_step+1})
 
 
     print('Saving final model checkpoint...')
