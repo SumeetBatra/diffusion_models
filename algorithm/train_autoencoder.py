@@ -5,6 +5,7 @@ import pickle
 import glob
 import torch.nn.functional as F
 
+from distutils.util import strtobool
 from pathlib import Path
 from torch.optim import Adam
 from dataset.policy_dataset import ElitesDataset, postprocess_model, ShapedEliteDataset
@@ -16,8 +17,15 @@ from RL.actor_critic import Actor
 from envs.brax_custom.brax_env import make_vec_env_brax
 from attrdict import AttrDict
 from utils.brax_utils import compare_rec_to_gt_policy
+from utils.utilities import log, config_wandb
 
 
+import scipy.stats as stats
+import wandb
+from datetime import datetime
+import argparse
+import random
+from torch.utils.tensorboard import SummaryWriter
 def grad_norm(model):
     sqsum = 0.0
     for p in model.parameters():
@@ -102,7 +110,37 @@ def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor
     return loss
 
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
+    parser.add_argument('--num_epochs', type=int, default=100)
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
+    parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
+    parser.add_argument('--wandb_run_name', type=str, default='vae_run')
+    parser.add_argument('--wandb_group', type=str, default='policy_vae')
+
+    args = parser.parse_args()
+    return args
+
+
 def train_autoencoder():
+    # experiment name
+    exp_name = 'autoencoder_' + datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    args = parse_args()
+
+    # set seed
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    # torch.backends.cudnn.deterministic = args.torch_deterministic
+
+    if args.use_wandb:
+        writer = SummaryWriter(f"runs/{exp_name}")
+        config_wandb(wandb_project=args.wandb_project, wandb_group=args.wandb_group, run_name=args.wandb_run_name)
+
+
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_checkpoint = None
     model = HypernetAutoEncoder(emb_channels=8, z_channels=4)
@@ -116,7 +154,7 @@ def train_autoencoder():
     mse_loss_func = mse_loss_from_weights_dict
     kl_loss_coef = 1e-6
 
-    model_checkpoint_folder = Path('./checkpoints')
+    model_checkpoint_folder = Path(args.model_checkpoint)
     model_checkpoint_folder.mkdir(exist_ok=True)
 
     dataloader = shaped_elites_dataset_factory()
@@ -136,7 +174,7 @@ def train_autoencoder():
         obs_dim = env.single_observation_space.shape[0]
         action_shape = env.single_action_space.shape[0]
 
-    epochs = 40
+    epochs = args.num_epochs
     global_step = 0
     for epoch in range(epochs):
 
@@ -152,10 +190,29 @@ def train_autoencoder():
             rec_policies, _ = model(gt_params)
             rec_agent = rec_policies[0]
 
-            compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, env, device, deterministic=True)
+            info = compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, env, device, deterministic=True)
 
-        print(f'{epoch=}')
-        print(f'{global_step=}')
+            ttest_res = info['t_test']
+            log.debug(f'T-test p-value: {ttest_res.pvalue}')
+
+            # log items to tensorboard and wandb
+            if args.use_wandb:
+                for key, val in info.items():
+                    if np.isscalar(val):
+                        writer.add_scalar(key, val, global_step+1)
+                        wandb.log({key: val, 'global_step': global_step+1})
+
+                # add t-test info to tb and wandb
+                writer.add_scalar('dist_shift/p-value_0', ttest_res.pvalue[0], global_step + 1)
+                writer.add_scalar('dist_shift/p-value_1', ttest_res.pvalue[1], global_step + 1)
+                wandb.log({
+                    'dist_shift/p-value_0': ttest_res.pvalue[0],
+                    'dist_shift/p-value_1': ttest_res.pvalue[1],
+                    'global_step': global_step + 1
+                })
+
+
+
         epoch_mse_loss = 0
         epoch_kl_loss = 0        
 
@@ -182,13 +239,18 @@ def train_autoencoder():
             epoch_kl_loss += kl_loss.item()
     
         print(f'Epoch {epoch} MSE Loss: {epoch_mse_loss / len(dataloader)}')
-
+        if args.use_wandb:
+            writer.add_scalar("Loss/mse_loss", epoch_mse_loss / len(dataloader), global_step+1)
+            writer.add_scalar("Loss/kl_loss", epoch_kl_loss / len(dataloader), global_step+1)
+            wandb.log({'Loss/mse_loss': epoch_mse_loss / len(dataloader), "global_step": global_step+1})
+            wandb.log({'Loss/kl_loss': epoch_kl_loss / len(dataloader), "global_step": global_step+1})
 
 
     print('Saving final model checkpoint...')
-    torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), 'autoencoder.pt'))
+    torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), f'{exp_name}_autoencoder.pt'))
 
 
 if __name__ == '__main__':
     train_autoencoder()
 
+# python -m algorithm.train_autoencoder --seed 111
