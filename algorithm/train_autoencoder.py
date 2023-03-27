@@ -16,7 +16,11 @@ from RL.actor_critic import Actor
 from envs.brax_custom.brax_env import make_vec_env_brax
 from attrdict import AttrDict
 import scipy.stats as stats
-
+import wandb
+from datetime import datetime
+import argparse
+import random
+from tensorboardX import SummaryWriter
 
 def grad_norm(model):
     sqsum = 0.0
@@ -144,7 +148,37 @@ def enjoy_brax(agent, env, env_cfg, device, deterministic=True):
     return total_reward.detach().cpu().numpy(), measures.cpu().numpy()
 
 
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
+    parser.add_argument('--num_epochs', type=int, default=100)
+    parser.add_argument('--seed', type=int, default=0)
+
+    args = parser.parse_args()
+    return args
+
+
 def train_autoencoder():
+    # experiment name
+    exp_name = 'autoencoder_' + datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    args = parse_args()
+
+    # set seed
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    # torch.backends.cudnn.deterministic = args.torch_deterministic
+
+    writer = SummaryWriter(f"runs/{exp_name}")
+    wandb.init(
+        project='policy_diffusion', 
+        name=exp_name,
+        # config=vars(args),
+        sync_tensorboard=True,
+        )
+
+
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_checkpoint = None
     model = HypernetAutoEncoder(emb_channels=8, z_channels=4)
@@ -158,7 +192,7 @@ def train_autoencoder():
     mse_loss_func = mse_loss_from_weights_dict
     kl_loss_coef = 1e-4
 
-    model_checkpoint_folder = Path('./checkpoints')
+    model_checkpoint_folder = Path(args.model_checkpoint)
     model_checkpoint_folder.mkdir(exist_ok=True)
 
     dataloader = shaped_elites_dataset_factory()
@@ -175,19 +209,19 @@ def train_autoencoder():
     obs_dim = env.observation_space.shape[0]
     action_shape = env.action_space.shape[0]
 
-    disc_start = 50001
-    kl_weight = 1e-6
-    disc_weight = 0.5
+    # disc_start = 50001
+    # kl_weight = 1e-6
+    # disc_weight = 0.5
     # loss_func = LPIPSWithDiscriminator(disc_start, kl_weight=kl_weight, disc_weight=disc_weight)
     # optimizer2 = Adam(loss_func.discriminator.parameters(), lr=1e-3)
 
 
-    epochs = 61
+    epochs = args.num_epochs
     global_step = 0
     for epoch in range(epochs):
 
 
-        if epoch % 5 == 0:
+        if epoch % 10 == 0:
             # get next batch of policies
             eval_params, eval_measure = next(iter(dataloader))
             agent = Actor(obs_dim, action_shape, True, True)
@@ -238,6 +272,9 @@ def train_autoencoder():
             print(f'Avg original reward: {avg_orig_rewards/5}')
             print(f'Avg reconstructed reward: {avg_rec_rewards/5}')
             print(f'T-test p-value: {avg_p_values/5}')
+            writer.add_scalar('Rewards/original', avg_orig_rewards/5, global_step+1)
+            writer.add_scalar('Rewards/reconstructed', avg_rec_rewards/5, global_step+1)
+            writer.add_scalar('dist_shift/p-value', avg_p_values/5, global_step+1)
             print("--------------------------------------------------------------------")
 
         # print(f'{epoch=}')
@@ -269,13 +306,16 @@ def train_autoencoder():
             epoch_kl_loss += kl_loss.item()
     
         print(f'Epoch {epoch} MSE Loss: {epoch_mse_loss / len(dataloader)}')
+        writer.add_scalar("Loss/mse_loss", epoch_mse_loss / len(dataloader), global_step+1)
+        writer.add_scalar("Loss/kl_loss", epoch_kl_loss / len(dataloader), global_step+1)
 
 
 
     print('Saving final model checkpoint...')
-    torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), 'autoencoder.pt'))
+    torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), f'{exp_name}_autoencoder.pt'))
 
 
 if __name__ == '__main__':
     train_autoencoder()
 
+# python -m algorithm.train_autoencoder --seed 111
