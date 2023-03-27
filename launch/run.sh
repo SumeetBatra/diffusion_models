@@ -3,7 +3,7 @@
 #SBATCH -N1
 #SBATCH -n1
 #SBATCH -c8
-#SBATCH --output=tmp/quad-%j.log
+#SBATCH --output=tmp/dm-%j.log
 
 # env setup
 seed=333
