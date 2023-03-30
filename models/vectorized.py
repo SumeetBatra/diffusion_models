@@ -129,13 +129,14 @@ class VectorizedPolicy(StochasticPolicy, ABC):
 
 
 class VectorizedActor(VectorizedPolicy):
-    def __init__(self, models, model_fn, obs_shape, action_shape, normalize_obs=False, normalize_returns=False):
+    def __init__(self, models, model_fn, obs_shape, action_shape, normalize_obs=False, normalize_returns=False, deterministic=False):
         VectorizedPolicy.__init__(self, models, model_fn, obs_shape, action_shape, normalize_obs=normalize_obs, normalize_returns=normalize_returns)
         self.blocks = self._vectorize_layers('actor_mean', models)
         self.actor_mean = nn.Sequential(*self.blocks)
-        action_logprobs = [model.actor_logstd for model in models]
-        action_logprobs = torch.cat(action_logprobs).to(self.device)
-        self.actor_logstd = nn.Parameter(action_logprobs)
+        if not deterministic:
+            action_logprobs = [model.actor_logstd for model in models]
+            action_logprobs = torch.cat(action_logprobs).to(self.device)
+            self.actor_logstd = nn.Parameter(action_logprobs)
 
     @autocast(device_type='cuda')
     def forward(self, x):
