@@ -30,11 +30,12 @@ class HypernetAutoEncoder(AutoEncoderBase):
         config['ve'] = 1 > 1
         config['layernorm'] = True
         config['hid'] = 16
+        config['norm_variables'] = False
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.decoder = MLP_GHN(**config, debug_level=0, device=device)
 
         def make_actor():
-            return Actor(obs_shape=18, action_shape=np.array([action_dim]), deterministic=True, normalize_obs=True)
+            return Actor(obs_shape=18, action_shape=np.array([action_dim]), deterministic=True, normalize_obs=False)
 
         self.dummy_actor = make_actor
 
@@ -50,7 +51,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
 
 
 class ModelEncoder(nn.Module):
-    def __init__(self, obs_shape, action_shape, z_channels, obs_norm = True):
+    def __init__(self, obs_shape, action_shape, z_channels, obs_norm = False):
         super().__init__()
 
         self.obs_norm = obs_norm

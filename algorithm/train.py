@@ -37,7 +37,7 @@ def shaped_elites_dataset_factory():
     archive_data_path = '/home/sumeet/diffusion_models/data'
     archive_dfs = []
 
-    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100*.pkl')
+    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100_no*.pkl')
     for path in archive_df_paths:
         with open(path, 'rb') as f:
             archive_df = pickle.load(f)
