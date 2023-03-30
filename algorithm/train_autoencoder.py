@@ -64,7 +64,7 @@ def shaped_elites_dataset_factory():
     archive_data_path = 'data'
     archive_dfs = []
 
-    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100_no_obs_norm*.pkl')
+    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100_adaptive*.pkl')
     for path in archive_df_paths:
         with open(path, 'rb') as f:
             archive_df = pickle.load(f)
@@ -72,7 +72,7 @@ def shaped_elites_dataset_factory():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), device=device)
+    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), device=device, normalize_obs=True)
 
     return DataLoader(s_elite_dataset, batch_size=32, shuffle=True)
 
@@ -113,7 +113,7 @@ def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
-    parser.add_argument('--num_epochs', type=int, default=100)
+    parser.add_argument('--num_epochs', type=int, default=20)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
@@ -159,7 +159,7 @@ def train_autoencoder():
 
     dataloader = shaped_elites_dataset_factory()
 
-    track_agent_quality = True
+    track_agent_quality = False
     if track_agent_quality:
         env_cfg = AttrDict({
             'env_name': 'halfcheetah',

@@ -9,7 +9,7 @@ from RL.actor_critic import Actor
 
 
 class HypernetAutoEncoder(AutoEncoderBase):
-    def __init__(self, emb_channels: int, z_channels: int):
+    def __init__(self, emb_channels: int, z_channels: int, normalize_obs: bool = False):
         """
         :param emb_channels: is the number of dimensions in the quantized embedding space
         :param z_channels: is the number of channels in the embedding space
@@ -35,7 +35,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
         self.decoder = MLP_GHN(**config, debug_level=0, device=device)
 
         def make_actor():
-            return Actor(obs_shape=18, action_shape=np.array([action_dim]), deterministic=True, normalize_obs=False)
+            return Actor(obs_shape=18, action_shape=np.array([action_dim]), deterministic=True, normalize_obs=normalize_obs)
 
         self.dummy_actor = make_actor
 

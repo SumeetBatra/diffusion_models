@@ -150,24 +150,41 @@ class ShapedEliteDataset(Dataset):
         self.action_shape = action_shape
         self.device = device
 
-        self.elites_list = archive_df.filter(regex='solution*').to_numpy()
         self.measures_list = archive_df.filter(regex='measure*').to_numpy()
-
-        self.normalize_obs = normalize_obs
         self.metadata = archive_df.filter(regex='metadata*').to_numpy()
+        self.normalize_obs = normalize_obs
+
+        elites_list = archive_df.filter(regex='solution*').to_numpy()
+        self.weight_dicts_list = self._params_to_weight_dicts(elites_list)
 
     def __len__(self):
-        return self.elites_list.shape[0]
+        return len(self.weight_dicts_list)
 
     def __getitem__(self, item):
-        params, measures = self.elites_list[item], self.measures_list[item]
-        weights_dict = Actor(self.obs_dim, self.action_shape, False, True).to(self.device).get_deserialized_weights(params)
-        if self.normalize_obs:
-            obs_normalizer = self.metadata[item]['obs_normalizer']
-            weights_dict['rms_mean'] = obs_normalizer.obs_rms.mean
-            weights_dict['rms_var'] = obs_normalizer.obs_rms.var
-            weights_dict['rms_count'] = obs_normalizer.obs_rms.count
+        weights_dict, measures = self.weight_dicts_list[item], self.measures_list[item]
         return weights_dict, measures
+
+    def _params_to_weight_dicts(self, elites_list):
+        weight_dicts = []
+        for i, params in enumerate(elites_list):
+            weights_dict = Actor(self.obs_dim, self.action_shape, self.normalize_obs, True).to(self.device).get_deserialized_weights(params)
+            if self.normalize_obs:
+                obs_normalizer = self.metadata[i][0]['obs_normalizer']
+                weights_dict = self._integrate_obs_normalizer(weights_dict, obs_normalizer)
+            weight_dicts.append(weights_dict)
+        return weight_dicts
+
+    @staticmethod
+    def _integrate_obs_normalizer(weights_dict, obs_normalizer):
+        w_in = weights_dict['actor_mean.0.weight']
+        b_in = weights_dict['actor_mean.0.bias']
+        mean, var = obs_normalizer.obs_rms.mean, obs_normalizer.obs_rms.var
+
+        w_new = w_in / torch.sqrt(var + 1e-8)
+        b_new = b_in - (mean / torch.sqrt(var + 1e-8)) @ w_in.T
+        weights_dict['actor_mean.0.weight'] = w_new
+        weights_dict['actor_mean.0.bias'] = b_new
+        return weights_dict
 
 
 
