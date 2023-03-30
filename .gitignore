@@ -6,3 +6,4 @@ wandb/
 data/
 .vscode
 runs
+*log.txt*
