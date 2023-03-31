@@ -19,7 +19,7 @@ class GroupNorm32(nn.GroupNorm):
         return super().forward(x.float()).type(x.dtype)
 
 
-class ResBlock():
+class ResBlock(nn.Module):
     def __init__(self, channels: int, d_time_emb: int, *, out_channels: int = None):
         super().__init__()
         if out_channels is None:
