@@ -89,17 +89,6 @@ class DownSample(nn.Module):
         return self.conv(x)
 
 
-class ResBlock(nn.Module):
-    def __init__(self, channels: int, d_time_embed: int, *, out_channels: int = None):
-        super().__init__()
-        if out_channels == None:
-            out_channels = channels
-
-        self.in_layers = nn.Sequential(
-
-        )
-
-
 class UNet(nn.Module):
     def __init__(self,
                  *,
