@@ -253,7 +253,7 @@ def train_autoencoder():
             #     print(f'Loss: {loss.item()}')
                 # print(f'grad norm: {grad_norm(model)}') TODO: fix this
             optimizer.step()
-            global_step += step
+            global_step += 1
 
             epoch_mse_loss += policy_mse_loss.item()
             epoch_kl_loss += kl_loss.item()
