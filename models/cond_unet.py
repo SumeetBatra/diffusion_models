@@ -1,3 +1,4 @@
+#  based off of https://nn.labml.ai/diffusion/stable_diffusion/model/unet.html
 import math
 import numpy as np
 import torch
