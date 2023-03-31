@@ -63,10 +63,12 @@ def compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, vec_env, device, dete
 
     ttest_res = stats.ttest_ind(gt_measures.detach().cpu().numpy(), rec_measures.detach().cpu().numpy(), equal_var=False)
     return {'t_test': ttest_res,
+            'measure_mse': torch.square(gt_measures - rec_measures).mean(0).detach().cpu().numpy(),
             'Rewards/original': gt_rewards.mean().item(),
             'Measures/original': gt_measures.mean(dim=0).detach().cpu().numpy(),
             'Rewards/reconstructed': rec_rewards.mean().item(),
-            'Measures/reconstructed': rec_measures.mean(dim=0).detach().cpu().numpy()}
+            'Measures/reconstructed': rec_measures.mean(dim=0).detach().cpu().numpy(),
+            }
 
 
 def rollout_many_agents(agents: list[Actor], env_cfg, vec_env, device, deterministic=True, verbose=True):

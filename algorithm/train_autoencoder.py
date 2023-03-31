@@ -113,7 +113,7 @@ def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
-    parser.add_argument('--num_epochs', type=int, default=20)
+    parser.add_argument('--num_epochs', type=int, default=60)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
@@ -159,7 +159,7 @@ def train_autoencoder():
 
     dataloader = shaped_elites_dataset_factory()
 
-    track_agent_quality = False
+    track_agent_quality = True
     if track_agent_quality:
         env_cfg = AttrDict({
             'env_name': 'halfcheetah',
@@ -193,7 +193,9 @@ def train_autoencoder():
             info = compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, env, device, deterministic=True)
 
             ttest_res = info['t_test']
+            measure_mse = info['measure_mse']
             log.debug(f'T-test p-value: {ttest_res.pvalue}')
+            log.debug(f'Measure MSE: {measure_mse}')
 
             # log items to tensorboard and wandb
             if args.use_wandb:
