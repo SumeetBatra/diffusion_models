@@ -26,7 +26,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
         config['max_shape'] = (256, 256, 1, 1)
         config['num_classes'] = 2 * action_dim
         config['num_observations'] = obs_dim
-        config['weight_norm'] = True
+        config['weight_norm'] = False
         config['ve'] = 1 > 1
         config['layernorm'] = True
         config['hid'] = 16
