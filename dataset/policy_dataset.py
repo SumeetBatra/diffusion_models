@@ -143,18 +143,26 @@ class ElitesDataset(Dataset):
 
 
 class ShapedEliteDataset(Dataset):
-    def __init__(self, archive_dfs: list[DataFrame], obs_dim, action_shape, device, normalize_obs=False):
+    def __init__(self, archive_dfs: list[DataFrame], obs_dim, action_shape, device, normalize_obs=False, is_eval = False):
         archive_df = pandas.concat(archive_dfs)
 
         self.obs_dim = obs_dim
         self.action_shape = action_shape
         self.device = device
+        self.is_eval = is_eval
 
         self.measures_list = archive_df.filter(regex='measure*').to_numpy()
         self.metadata = archive_df.filter(regex='metadata*').to_numpy()
         self.normalize_obs = normalize_obs
 
         elites_list = archive_df.filter(regex='solution*').to_numpy()
+
+        if self.is_eval:
+            indices = np.random.choice(len(elites_list), 8, replace=False)
+            elites_list = elites_list[indices]
+            self.measures_list = self.measures_list[indices]
+            self.metadata = self.metadata[indices]
+
         self.weight_dicts_list = self._params_to_weight_dicts(elites_list)
 
     def __len__(self):

@@ -60,7 +60,7 @@ def dataset_factory():
     return DataLoader(elite_dataset, batch_size=32, shuffle=True)
 
 
-def shaped_elites_dataset_factory():
+def shaped_elites_dataset_factory(batch_size=32, is_eval=False):
     archive_data_path = 'data'
     archive_dfs = []
 
@@ -72,9 +72,9 @@ def shaped_elites_dataset_factory():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), device=device, normalize_obs=True)
+    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), device=device, normalize_obs=True, is_eval=is_eval)
 
-    return DataLoader(s_elite_dataset, batch_size=32, shuffle=True)
+    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval)
 
 
 def mse_loss_from_unpadded_params(policy_in_tensors, rec_agents):
@@ -118,7 +118,8 @@ def parse_args():
     parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
     parser.add_argument('--wandb_run_name', type=str, default='vae_run')
-    parser.add_argument('--wandb_group', type=str, default='policy_vae')
+    parser.add_argument('--wandb_group', type=str, default=None)
+    parser.add_argument('--wandb_entity', type=str, default=None)
 
     args = parser.parse_args()
     return args
@@ -138,7 +139,7 @@ def train_autoencoder():
 
     if args.use_wandb:
         writer = SummaryWriter(f"runs/{exp_name}")
-        config_wandb(wandb_project=args.wandb_project, wandb_group=args.wandb_group, run_name=args.wandb_run_name)
+        config_wandb(wandb_project=args.wandb_project, wandb_group=args.wandb_group, run_name=args.wandb_run_name, entity=args.wandb_entity)
 
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -157,7 +158,8 @@ def train_autoencoder():
     model_checkpoint_folder = Path(args.model_checkpoint)
     model_checkpoint_folder.mkdir(exist_ok=True)
 
-    dataloader = shaped_elites_dataset_factory()
+    dataloader = shaped_elites_dataset_factory(batch_size=32, is_eval=False)
+    test_dataloader = shaped_elites_dataset_factory(batch_size=8, is_eval=True)
 
     track_agent_quality = True
     if track_agent_quality:
@@ -167,7 +169,7 @@ def train_autoencoder():
             'num_dims': 2,
             'envs_per_model': 1,
             'seed': 0,
-            'num_envs': 100,
+            'num_envs': 20,
         })
 
         env = make_vec_env_brax(env_cfg)
@@ -181,38 +183,54 @@ def train_autoencoder():
         if track_agent_quality and epoch % 5 == 0:
             # get a ground truth policy and evaluate it. Then get the reconstructed policy and compare its
             # performance and behavior to the ground truth
-            gt_params, gt_measure = next(iter(dataloader))
-            gt_agent = Actor(obs_dim, action_shape, False, False)
-            actor_weights = {key: gt_params[key][0] for key in gt_params.keys() if 'actor' in key}
-            gt_agent.load_state_dict(actor_weights)
-            gt_agent.to(device)
-
+            gt_params, gt_measure = next(iter(test_dataloader))
             rec_policies, _ = model(gt_params)
-            rec_agent = rec_policies[0]
 
-            info = compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, env, device, deterministic=True)
+            avg_measure_mse = 0
+            avg_t_test = 0
+            avg_orig_reward = 0
+            avg_reconstructed_reward = 0
+            for k in range(8):
+                gt_agent = Actor(obs_dim, action_shape, False, False)
+                actor_weights = {key: gt_params[key][k] for key in gt_params.keys() if 'actor' in key}
+                gt_agent.load_state_dict(actor_weights)
+                gt_agent.to(device)
 
-            ttest_res = info['t_test']
-            measure_mse = info['measure_mse']
-            log.debug(f'T-test p-value: {ttest_res.pvalue}')
-            log.debug(f'Measure MSE: {measure_mse}')
+                rec_agent = rec_policies[k]
+
+                info = compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, env, device, deterministic=True)
+
+                avg_measure_mse += info['measure_mse']
+                avg_t_test += info['t_test'].pvalue
+                avg_orig_reward += info['Rewards/original']
+                avg_reconstructed_reward += info['Rewards/reconstructed']
+
+            avg_measure_mse /= 8
+            avg_t_test /= 8
+            avg_orig_reward /= 8
+            avg_reconstructed_reward /= 8
+
+            # log.debug(f'T-test p-value: {avg_t_test/8}')
+            log.debug(f'Measure MSE: {avg_measure_mse}')
 
             # log items to tensorboard and wandb
             if args.use_wandb:
-                for key, val in info.items():
-                    if np.isscalar(val):
-                        writer.add_scalar(key, val, global_step+1)
-                        wandb.log({key: val, 'global_step': global_step+1})
 
-                # add t-test info to tb and wandb
-                writer.add_scalar('dist_shift/p-value_0', ttest_res.pvalue[0], global_step + 1)
-                writer.add_scalar('dist_shift/p-value_1', ttest_res.pvalue[1], global_step + 1)
+                writer.add_scalar('measure_mse_0', avg_measure_mse[0], global_step + 1)
+                writer.add_scalar('measure_mse_1', avg_measure_mse[1], global_step + 1)
+                writer.add_scalar('orig_reward', avg_orig_reward, global_step + 1)
+                writer.add_scalar('rec_reward', avg_reconstructed_reward, global_step + 1)
+                writer.add_scalar('dist_shift/p-value_0', avg_t_test[0], global_step + 1)
+                writer.add_scalar('dist_shift/p-value_1', avg_t_test[1], global_step + 1)
                 wandb.log({
-                    'dist_shift/p-value_0': ttest_res.pvalue[0],
-                    'dist_shift/p-value_1': ttest_res.pvalue[1],
-                    'global_step': global_step + 1
+                    'measure_mse_0': avg_measure_mse[0],
+                    'measure_mse_1': avg_measure_mse[1],
+                    'orig_reward': avg_orig_reward,
+                    'rec_reward': avg_reconstructed_reward,
+                    'dist_shift/p-value_0': avg_t_test[0],
+                    'dist_shift/p-value_1': avg_t_test[1],
+                    'global_step': global_step + 1,
                 })
-
 
 
         epoch_mse_loss = 0

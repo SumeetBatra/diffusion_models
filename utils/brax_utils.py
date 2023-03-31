@@ -54,12 +54,12 @@ def compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, vec_env, device, dete
     # performance and behavior to the ground truth
 
     gt_rewards, gt_measures = rollout_agent(gt_agent, env_cfg, vec_env, device, deterministic)
-    log.debug(f'Ground Truth Agent -- Reward: {gt_rewards.mean().item()} +/- {gt_rewards.std().item()} , '
-              f'\n Measures: {gt_measures.mean(dim=0).detach().cpu().numpy()} +/- {gt_measures.mean(dim=0).std().detach().cpu().numpy()}')
+    # log.debug(f'Ground Truth Agent -- Reward: {gt_rewards.mean().item()} +/- {gt_rewards.std().item()} , '
+            #   f'\n Measures: {gt_measures.mean(dim=0).detach().cpu().numpy()} +/- {gt_measures.mean(dim=0).std().detach().cpu().numpy()}')
 
     rec_rewards, rec_measures = rollout_agent(rec_agent, env_cfg, vec_env, device, deterministic)
-    log.debug(f'Reconstructed Agent -- Reward: {rec_rewards.mean().item()} +/- {rec_rewards.std().item()}, '
-              f'\n Measures: {rec_measures.mean(dim=0).detach().cpu().numpy()} +/- {rec_measures.mean(dim=0).std().detach().cpu().numpy()}')
+    # log.debug(f'Reconstructed Agent -- Reward: {rec_rewards.mean().item()} +/- {rec_rewards.std().item()}, '
+            #   f'\n Measures: {rec_measures.mean(dim=0).detach().cpu().numpy()} +/- {rec_measures.mean(dim=0).std().detach().cpu().numpy()}')
 
     ttest_res = stats.ttest_ind(gt_measures.detach().cpu().numpy(), rec_measures.detach().cpu().numpy(), equal_var=False)
     return {'t_test': ttest_res,
