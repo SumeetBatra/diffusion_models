@@ -6,9 +6,9 @@
 #SBATCH --output=tmp/dm-%j.log
 
 # env setup
-seed=888
+seed=111
 # train
 
 srun \
 python -m algorithm.train_autoencoder \
---seed $seed
+--seed $seed --use_wandb True
