@@ -37,7 +37,7 @@ def shaped_elites_dataset_factory():
     archive_data_path = '/home/sumeet/diffusion_models/data'
     archive_dfs = []
 
-    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100_no*.pkl')
+    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100_adaptive*.pkl')
     for path in archive_df_paths:
         with open(path, 'rb') as f:
             archive_df = pickle.load(f)
@@ -45,7 +45,7 @@ def shaped_elites_dataset_factory():
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), device=device)
+    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), device=device, normalize_obs=True, is_eval=False)
 
     return DataLoader(s_elite_dataset, batch_size=32, shuffle=True)
 
@@ -70,6 +70,7 @@ def train(cfg):
 
     model_checkpoint_folder = Path('./checkpoints')
     model_checkpoint_folder.mkdir(exist_ok=True)
+    model_checkpoint = None
 
     if cfg.use_wandb:
         config_wandb(run_name=cfg.wandb_run_name, wandb_project=cfg.wandb_project, wandb_group=cfg.wandb_group,
@@ -113,13 +114,16 @@ def train(cfg):
         )
         gauss_diff = GaussianDiffusion(betas, num_timesteps=timesteps, device=device)
 
+    if model_checkpoint is not None:
+        print(f'Loading diffusion model from checkpoint...')
+        model.load_state_dict(torch.load(model_checkpoint))
     model.to(device)
 
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
     dataloader = shaped_elites_dataset_factory()
 
-    epochs = 20
+    epochs = 40
     scale_factor = 1.0
     for epoch in range(epochs):
         for step, (policies, measures) in enumerate(dataloader):
