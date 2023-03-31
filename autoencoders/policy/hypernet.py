@@ -9,7 +9,7 @@ from RL.actor_critic import Actor
 
 
 class HypernetAutoEncoder(AutoEncoderBase):
-    def __init__(self, emb_channels: int, z_channels: int):
+    def __init__(self, emb_channels: int, z_channels: int, normalize_obs: bool = False):
         """
         :param emb_channels: is the number of dimensions in the quantized embedding space
         :param z_channels: is the number of channels in the embedding space
@@ -26,15 +26,16 @@ class HypernetAutoEncoder(AutoEncoderBase):
         config['max_shape'] = (256, 256, 1, 1)
         config['num_classes'] = 2 * action_dim
         config['num_observations'] = obs_dim
-        config['weight_norm'] = True
+        config['weight_norm'] = False
         config['ve'] = 1 > 1
         config['layernorm'] = True
         config['hid'] = 16
+        config['norm_variables'] = False
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.decoder = MLP_GHN(**config, debug_level=0, device=device)
 
         def make_actor():
-            return Actor(obs_shape=18, action_shape=np.array([action_dim]), deterministic=True, normalize_obs=True)
+            return Actor(obs_shape=18, action_shape=np.array([action_dim]), deterministic=True, normalize_obs=normalize_obs)
 
         self.dummy_actor = make_actor
 
@@ -50,7 +51,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
 
 
 class ModelEncoder(nn.Module):
-    def __init__(self, obs_shape, action_shape, z_channels, obs_norm = True):
+    def __init__(self, obs_shape, action_shape, z_channels, obs_norm = False):
         super().__init__()
 
         self.obs_norm = obs_norm

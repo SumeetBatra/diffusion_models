@@ -5,6 +5,7 @@ import pickle
 import glob
 import torch.nn.functional as F
 
+from distutils.util import strtobool
 from pathlib import Path
 from torch.optim import Adam
 from dataset.policy_dataset import ElitesDataset, postprocess_model, ShapedEliteDataset
@@ -15,6 +16,10 @@ from autoencoders.policy.hypernet import HypernetAutoEncoder
 from RL.actor_critic import Actor
 from envs.brax_custom.brax_env import make_vec_env_brax
 from attrdict import AttrDict
+from utils.brax_utils import compare_rec_to_gt_policy
+from utils.utilities import log, config_wandb
+
+
 import scipy.stats as stats
 import wandb
 from datetime import datetime
@@ -55,28 +60,21 @@ def dataset_factory():
     return DataLoader(elite_dataset, batch_size=32, shuffle=True)
 
 
-def shaped_elites_dataset_factory():
+def shaped_elites_dataset_factory(batch_size=32, is_eval=False):
     archive_data_path = 'data'
     archive_dfs = []
 
-    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100*.pkl')
+    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100_adaptive*.pkl')
     for path in archive_df_paths:
         with open(path, 'rb') as f:
             archive_df = pickle.load(f)
             archive_dfs.append(archive_df)
 
-
-    scheduler_df_paths = glob.glob(archive_data_path + '/scheduler*100x100*.pkl')
-
-    
-    with open(scheduler_df_paths[0], 'rb') as f:
-        scheduler = pickle.load(f)
-
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), device=device, scheduler=scheduler)
+    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), device=device, normalize_obs=True, is_eval=is_eval)
 
-    return DataLoader(s_elite_dataset, batch_size=32, shuffle=True)
+    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval)
 
 
 def mse_loss_from_unpadded_params(policy_in_tensors, rec_agents):
@@ -98,16 +96,11 @@ def mse_loss_from_unpadded_params(policy_in_tensors, rec_agents):
 def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor]):
     # convert the rec_agents (Actors) into a dict of weights
     pred_weights_dict = {}
-    # pred_weights_dict['rms_mean'] = []
-    # pred_weights_dict['rms_var'] = []
     for agent in rec_agents:
         for name, param in agent.named_parameters():
             if name not in pred_weights_dict:
                 pred_weights_dict[name] = []
             pred_weights_dict[name].append(param)
-
-        # pred_weights_dict['rms_mean'].append(agent.obs_normalizer.obs_rms.mean)
-        # pred_weights_dict['rms_var'].append(agent.obs_normalizer.obs_rms.var)
 
     # calculate the loss
     loss = 0
@@ -116,42 +109,17 @@ def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor
 
     return loss
 
-def enjoy_brax(agent, env, env_cfg, device, deterministic=True):
-
-    obs_mean, obs_var = agent.obs_normalizer.obs_rms.mean, agent.obs_normalizer.obs_rms.var
-
-    obs = env.reset()
-    rollout = [env.unwrapped._state]
-    total_reward = 0
-    measures = torch.zeros(env_cfg.num_dims).to(device)
-    done = False
-    while not done:
-        with torch.no_grad():
-            obs = obs.unsqueeze(dim=0).to(device)
-            obs = (obs - obs_mean) / torch.sqrt(obs_var + 1e-8)
-
-            if deterministic:
-                act = agent.actor_mean(obs)
-            else:
-                act, _, _ = agent.get_action(obs)
-            act = act.squeeze()
-            obs, rew, done, info = env.step(act.cpu())
-            measures += info['measures']
-            rollout.append(env.unwrapped._state)
-            total_reward += rew
-
-    # print(f'{total_reward=}')
-    # print(f' Rollout length: {len(rollout)}')
-    measures /= len(rollout)
-    # print(f'Recorded Measures: {measures.cpu().numpy()}')
-    return total_reward.detach().cpu().numpy(), measures.cpu().numpy()
-
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
-    parser.add_argument('--num_epochs', type=int, default=100)
+    parser.add_argument('--num_epochs', type=int, default=60)
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
+    parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
+    parser.add_argument('--wandb_run_name', type=str, default='vae_run')
+    parser.add_argument('--wandb_group', type=str, default=None)
+    parser.add_argument('--wandb_entity', type=str, default=None)
 
     args = parser.parse_args()
     return args
@@ -169,13 +137,9 @@ def train_autoencoder():
     torch.manual_seed(args.seed)
     # torch.backends.cudnn.deterministic = args.torch_deterministic
 
-    writer = SummaryWriter(f"runs/{exp_name}")
-    wandb.init(
-        project='policy_diffusion', 
-        name=exp_name,
-        # config=vars(args),
-        sync_tensorboard=True,
-        )
+    if args.use_wandb:
+        writer = SummaryWriter(f"runs/{exp_name}")
+        config_wandb(wandb_project=args.wandb_project, wandb_group=args.wandb_group, run_name=args.wandb_run_name, entity=args.wandb_entity)
 
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -189,100 +153,86 @@ def train_autoencoder():
     optimizer = Adam(model.parameters(), lr=1e-3)
 
     mse_loss_func = mse_loss_from_weights_dict
-    kl_loss_coef = 1e-4
+    kl_loss_coef = 1e-6
 
     model_checkpoint_folder = Path(args.model_checkpoint)
     model_checkpoint_folder.mkdir(exist_ok=True)
 
-    dataloader = shaped_elites_dataset_factory()
-    env_cfg = AttrDict({
-        'env_name': 'halfcheetah',
-        'env_batch_size': None,
-        'num_dims': 2,
-        'envs_per_model': 1,
-        'seed': 0,
-        'num_envs': 1,
-    })
+    dataloader = shaped_elites_dataset_factory(batch_size=32, is_eval=False)
+    test_dataloader = shaped_elites_dataset_factory(batch_size=8, is_eval=True)
 
-    env = make_vec_env_brax(env_cfg)
-    obs_dim = env.observation_space.shape[0]
-    action_shape = env.action_space.shape[0]
+    track_agent_quality = True
+    if track_agent_quality:
+        env_cfg = AttrDict({
+            'env_name': 'halfcheetah',
+            'env_batch_size': 100,
+            'num_dims': 2,
+            'envs_per_model': 1,
+            'seed': 0,
+            'num_envs': 20,
+        })
 
-    # disc_start = 50001
-    # kl_weight = 1e-6
-    # disc_weight = 0.5
-    # loss_func = LPIPSWithDiscriminator(disc_start, kl_weight=kl_weight, disc_weight=disc_weight)
-    # optimizer2 = Adam(loss_func.discriminator.parameters(), lr=1e-3)
-
+        env = make_vec_env_brax(env_cfg)
+        obs_dim = env.single_observation_space.shape[0]
+        action_shape = env.single_action_space.shape[0]
 
     epochs = args.num_epochs
     global_step = 0
     for epoch in range(epochs):
 
+        if track_agent_quality and epoch % 5 == 0:
+            # get a ground truth policy and evaluate it. Then get the reconstructed policy and compare its
+            # performance and behavior to the ground truth
+            gt_params, gt_measure = next(iter(test_dataloader))
+            rec_policies, _ = model(gt_params)
 
-        if epoch % 10 == 0:
-            # get next batch of policies
-            eval_params, eval_measure = next(iter(dataloader))
-            agent = Actor(obs_dim, action_shape, True, True)
-            rec_policies, posterior = model(eval_params)
-            avg_p_values = np.zeros((1,2))
-            avg_orig_rewards = 0
-            avg_rec_rewards = 0
-            for i in range(5): 
-                actor_weights = {key:eval_params[key][i] for key in eval_params.keys() if 'actor' in key}
-                actor_weights['obs_normalizer.obs_rms.mean'] = eval_params['rms_mean'][i]
-                actor_weights['obs_normalizer.obs_rms.var'] = eval_params['rms_var'][i]
-                actor_weights['obs_normalizer.obs_rms.count'] = eval_params['rms_count'][i]
+            avg_measure_mse = 0
+            avg_t_test = 0
+            avg_orig_reward = 0
+            avg_reconstructed_reward = 0
+            for k in range(8):
+                gt_agent = Actor(obs_dim, action_shape, False, False)
+                actor_weights = {key: gt_params[key][k] for key in gt_params.keys() if 'actor' in key}
+                gt_agent.load_state_dict(actor_weights)
+                gt_agent.to(device)
 
-                actor_weights['return_normalizer.return_rms.mean'] = agent.return_normalizer.return_rms.mean
-                actor_weights['return_normalizer.return_rms.var'] = agent.return_normalizer.return_rms.var
-                actor_weights['return_normalizer.return_rms.count'] = agent.return_normalizer.return_rms.count
+                rec_agent = rec_policies[k]
 
-                agent.load_state_dict(actor_weights)
-                agent.to(device)
-                # print(f'Sampled measure from elite: {eval_measure[i]}')
-                # print("Running an elite policy from the dataset...")
-                total_rewards = []
-                true_eval_measures = []
-                for l in range(5):
-                    total_reward, true_eval_measure = enjoy_brax(agent, env, env_cfg, device)
-                    total_rewards.append(total_reward)
-                    true_eval_measures.append(true_eval_measure)
+                info = compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, env, device, deterministic=True)
 
-                # print(f'Average reward: {np.mean(total_rewards)}, std: {np.std(total_rewards)}')
-                avg_orig_rewards += np.mean(total_rewards)
+                avg_measure_mse += info['measure_mse']
+                avg_t_test += info['t_test'].pvalue
+                avg_orig_reward += info['Rewards/original']
+                avg_reconstructed_reward += info['Rewards/reconstructed']
 
-                agent.actor_mean = rec_policies[i].actor_mean
-                # agent = rec_policies[i]
-                # print("Running a policy from the autoencoder...")
+            avg_measure_mse /= 8
+            avg_t_test /= 8
+            avg_orig_reward /= 8
+            avg_reconstructed_reward /= 8
 
-                recon_total_rewards = []
-                recon_true_eval_measures = []
-                for l in range(5):
-                    total_reward, true_eval_measure = enjoy_brax(agent, env, env_cfg, device)
-                    recon_total_rewards.append(total_reward)
-                    recon_true_eval_measures.append(true_eval_measure)
+            # log.debug(f'T-test p-value: {avg_t_test/8}')
+            log.debug(f'Measure MSE: {avg_measure_mse}')
 
-                # print(f'Average reward: {np.mean(recon_total_rewards)}, std: {np.std(recon_total_rewards)}')
-                avg_rec_rewards += np.mean(recon_total_rewards)
+            # log items to tensorboard and wandb
+            if args.use_wandb:
 
-                result = stats.ttest_ind(true_eval_measures, recon_true_eval_measures, equal_var = False)
-                avg_p_values += result.pvalue
-            print(f'Avg original reward: {avg_orig_rewards/5}')
-            print(f'Avg reconstructed reward: {avg_rec_rewards/5}')
-            print(f'T-test p-value: {avg_p_values/5}')
-            writer.add_scalar('Rewards/original', avg_orig_rewards/5, global_step+1)
-            wandb.log({'Rewards/original': avg_orig_rewards/5, 'global_step': global_step+1})
-            writer.add_scalar('Rewards/reconstructed', avg_rec_rewards/5, global_step+1)
-            wandb.log({'Rewards/reconstructed': avg_rec_rewards/5, 'global_step': global_step+1})
-            writer.add_scalar('dist_shift/p-value_0', avg_p_values[0,0]/5, global_step+1)
-            wandb.log({'dist_shift/p-value_0': avg_p_values[0,0]/5, 'global_step': global_step+1})
-            writer.add_scalar('dist_shift/p-value_1', avg_p_values[0,1]/5, global_step+1)
-            wandb.log({'dist_shift/p-value_1': avg_p_values[0,1]/5, 'global_step': global_step+1})
-            print("--------------------------------------------------------------------")
+                writer.add_scalar('measure_mse_0', avg_measure_mse[0], global_step + 1)
+                writer.add_scalar('measure_mse_1', avg_measure_mse[1], global_step + 1)
+                writer.add_scalar('orig_reward', avg_orig_reward, global_step + 1)
+                writer.add_scalar('rec_reward', avg_reconstructed_reward, global_step + 1)
+                writer.add_scalar('dist_shift/p-value_0', avg_t_test[0], global_step + 1)
+                writer.add_scalar('dist_shift/p-value_1', avg_t_test[1], global_step + 1)
+                wandb.log({
+                    'measure_mse_0': avg_measure_mse[0],
+                    'measure_mse_1': avg_measure_mse[1],
+                    'orig_reward': avg_orig_reward,
+                    'rec_reward': avg_reconstructed_reward,
+                    'dist_shift/p-value_0': avg_t_test[0],
+                    'dist_shift/p-value_1': avg_t_test[1],
+                    'global_step': global_step + 1,
+                })
 
-        # print(f'{epoch=}')
-        # print(f'{global_step=}')
+
         epoch_mse_loss = 0
         epoch_kl_loss = 0        
 
@@ -293,8 +243,7 @@ def train_autoencoder():
             measures = measures.to(device)
 
             rec_policies, posterior = model(policies)
-            # loss = loss_func(batch, img_out, posterior, global_step, 0)
-            # loss += loss_func(batch, img_out, posterior, global_step, 1)
+
             policy_mse_loss = mse_loss_func(policies, rec_policies)
             kl_loss = posterior.kl().mean()
             loss = policy_mse_loss + kl_loss_coef * kl_loss
@@ -310,10 +259,11 @@ def train_autoencoder():
             epoch_kl_loss += kl_loss.item()
     
         print(f'Epoch {epoch} MSE Loss: {epoch_mse_loss / len(dataloader)}')
-        writer.add_scalar("Loss/mse_loss", epoch_mse_loss / len(dataloader), global_step+1)
-        writer.add_scalar("Loss/kl_loss", epoch_kl_loss / len(dataloader), global_step+1)
-        wandb.log({'Loss/mse_loss': epoch_mse_loss / len(dataloader), "global_step": global_step+1})
-        wandb.log({'Loss/kl_loss': epoch_kl_loss / len(dataloader), "global_step": global_step+1})
+        if args.use_wandb:
+            writer.add_scalar("Loss/mse_loss", epoch_mse_loss / len(dataloader), global_step+1)
+            writer.add_scalar("Loss/kl_loss", epoch_kl_loss / len(dataloader), global_step+1)
+            wandb.log({'Loss/mse_loss': epoch_mse_loss / len(dataloader), "global_step": global_step+1})
+            wandb.log({'Loss/kl_loss': epoch_kl_loss / len(dataloader), "global_step": global_step+1})
 
 
     print('Saving final model checkpoint...')

@@ -143,86 +143,72 @@ class ElitesDataset(Dataset):
 
 
 class ShapedEliteDataset(Dataset):
-    def __init__(self, archive_dfs: list[DataFrame], obs_dim, action_shape, device, scheduler=None):
+    def __init__(self, archive_dfs: list[DataFrame], obs_dim, action_shape, device, normalize_obs=False, is_eval = False):
         archive_df = pandas.concat(archive_dfs)
-        
-        self.read_scheduler = True if scheduler is not None else False
 
         self.obs_dim = obs_dim
         self.action_shape = action_shape
         self.device = device
+        self.is_eval = is_eval
 
-        if self.read_scheduler:
-            total_number_of_elites = scheduler.archive._num_occupied
-            all_indices = np.arange(total_number_of_elites)
-            self.elites = EliteBatch(
-                readonly(scheduler.archive._solution_arr[all_indices]),
-                readonly(scheduler.archive._objective_arr[all_indices]),
-                readonly(scheduler.archive._measures_arr[all_indices]),
-                readonly(all_indices),
-                readonly(scheduler.archive._metadata_arr[all_indices]),
-            )
-            self._get_all_elite()
-            # print('elite list length', len(self.elites_list))
+        self.measures_list = archive_df.filter(regex='measure*').to_numpy()
+        self.metadata = archive_df.filter(regex='metadata*').to_numpy()
+        self.normalize_obs = normalize_obs
 
-        else:
-            self.elites_list = archive_df.filter(regex='solution*').to_numpy()
-            self.measures_list = archive_df.filter(regex='measure*').to_numpy()
-        
+        elites_list = archive_df.filter(regex='solution*').to_numpy()
+
+        if self.is_eval:
+            indices = np.random.choice(len(elites_list), 8, replace=False)
+            elites_list = elites_list[indices]
+            self.measures_list = self.measures_list[indices]
+            self.metadata = self.metadata[indices]
+
+        self.weight_dicts_list = self._params_to_weight_dicts(elites_list)
 
     def __len__(self):
-        if self.read_scheduler:
-            return len(self.elites_list)
-        else:
-            return self.elites_list.shape[0]
+        return len(self.weight_dicts_list)
 
     def __getitem__(self, item):
-        if self.read_scheduler:
-            weights_dict, measures = self.elites_list[item]
-        else:
-            params, measures = self.elites_list[item], self.measures_list[item]
-            weights_dict = Actor(self.obs_dim, self.action_shape, True, True).to(self.device).get_deserialized_weights(params)
-
+        weights_dict, measures = self.weight_dicts_list[item], self.measures_list[item]
         return weights_dict, measures
 
-    def _get_all_elite(self):
-        self.elites_list = []
-        for i in tqdm(range(len(self.elites.solution_batch))):
-            params = self.elites.solution_batch[i].flatten()
-            weights_dict = Actor(self.obs_dim, self.action_shape, True, True) \
-                .to(self.device).get_deserialized_weights(params)
-            
-            elite_measure = self.elites.measures_batch[i]
+    def _params_to_weight_dicts(self, elites_list):
+        weight_dicts = []
+        for i, params in enumerate(elites_list):
+            weights_dict = Actor(self.obs_dim, self.action_shape, self.normalize_obs, True).to(self.device).get_deserialized_weights(params)
+            if self.normalize_obs:
+                obs_normalizer = self.metadata[i][0]['obs_normalizer']
+                weights_dict = self._integrate_obs_normalizer(weights_dict, obs_normalizer)
+            weight_dicts.append(weights_dict)
+        return weight_dicts
 
-            # convert elite_measure to float 32
-            elite_measure = torch.tensor(elite_measure, dtype=torch.float32)
+    @staticmethod
+    def _integrate_obs_normalizer(weights_dict, obs_normalizer):
+        w_in = weights_dict['actor_mean.0.weight']
+        b_in = weights_dict['actor_mean.0.bias']
+        mean, var = obs_normalizer.obs_rms.mean, obs_normalizer.obs_rms.var
 
-            elite_measure = elite_measure.to(self.device)
+        w_new = w_in / torch.sqrt(var + 1e-8)
+        b_new = b_in - (mean / torch.sqrt(var + 1e-8)) @ w_in.T
+        weights_dict['actor_mean.0.weight'] = w_new
+        weights_dict['actor_mean.0.bias'] = b_new
+        return weights_dict
 
-            if torch.isinf(elite_measure).any().item() \
-                or torch.max(elite_measure) > 1 \
-                    or torch.min(elite_measure) < 0 \
-                        or self.elites.metadata_batch[i] is None:
-                continue
-            else:
-                obs_normalizer = self.elites.metadata_batch[i]['obs_normalizer']
-                weights_dict['rms_mean'] = obs_normalizer.obs_rms.mean
-                weights_dict['rms_var'] = obs_normalizer.obs_rms.var
-                weights_dict['rms_count'] = obs_normalizer.obs_rms.count
-                self.elites_list.append((weights_dict, elite_measure))
 
 
 
 if __name__ == '__main__':
-    archive_df_path = '/home/sumeet/QDPPO/experiments/paper_qdppo_halfcheetah/1111/checkpoints/cp_00002000/archive_00002000.pkl'
+    archive_df_path = '/home/sumeet/QDPPO/experiments/ppga_halfcheetah_100x100_no_obs_norm/1111/checkpoints/cp_00002000/archive_df_00002000.pkl'
     with open(archive_df_path, 'rb') as f:
         archive_df = pickle.load(f)
 
     mlp_shape = (128, 128, 6)
+    obs_dim, action_shape = 18, np.array([6])
 
     dummy_agent = Actor(obs_shape=18, action_shape=np.array([6]))
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    ds = ElitesDataset(archive_df, mlp_shape, dummy_agent)
+    ds = ShapedEliteDataset([archive_df], obs_dim=obs_dim, action_shape=action_shape, device=device, normalize_obs=True)
 
 
 
