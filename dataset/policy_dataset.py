@@ -163,24 +163,27 @@ class ShapedEliteDataset(Dataset):
             self.measures_list = self.measures_list[indices]
             self.metadata = self.metadata[indices]
 
-        self.weight_dicts_list = self._params_to_weight_dicts(elites_list)
+        self.weight_dicts_list, self.obsnorm_list = self._params_to_weight_dicts(elites_list)
 
     def __len__(self):
         return len(self.weight_dicts_list)
 
     def __getitem__(self, item):
         weights_dict, measures = self.weight_dicts_list[item], self.measures_list[item]
-        return weights_dict, measures
+        obsnorm = self.obsnorm_list[item]
+        return weights_dict, measures, obsnorm
 
     def _params_to_weight_dicts(self, elites_list):
         weight_dicts = []
-        for i, params in enumerate(elites_list):
+        obsnorms = []
+        for i, params in tqdm(enumerate(elites_list)):
             weights_dict = Actor(self.obs_dim, self.action_shape, self.normalize_obs, True).to(self.device).get_deserialized_weights(params)
+            obs_normalizer = self.metadata[i][0]['obs_normalizer']
             if self.normalize_obs:
-                obs_normalizer = self.metadata[i][0]['obs_normalizer']
                 weights_dict = self._integrate_obs_normalizer(weights_dict, obs_normalizer)
             weight_dicts.append(weights_dict)
-        return weight_dicts
+            obsnorms.append(obs_normalizer.state_dict())
+        return weight_dicts, obsnorms
 
     @staticmethod
     def _integrate_obs_normalizer(weights_dict, obs_normalizer):

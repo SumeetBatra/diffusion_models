@@ -60,7 +60,7 @@ def dataset_factory():
     return DataLoader(elite_dataset, batch_size=32, shuffle=True)
 
 
-def shaped_elites_dataset_factory(batch_size=32, is_eval=False):
+def shaped_elites_dataset_factory(include_obsnorm = True, batch_size=32, is_eval=False):
     archive_data_path = 'data'
     archive_dfs = []
 
@@ -72,7 +72,7 @@ def shaped_elites_dataset_factory(batch_size=32, is_eval=False):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), device=device, normalize_obs=True, is_eval=is_eval)
+    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), device=device, normalize_obs=include_obsnorm, is_eval=is_eval)
 
     return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval)
 
@@ -123,6 +123,7 @@ def parse_args():
     parser.add_argument('--wandb_group', type=str, default=None)
     parser.add_argument('--wandb_entity', type=str, default=None)
     parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument('--include_obsnorm', type=lambda x: bool(strtobool(x)), default=True)
 
     args = parser.parse_args()
     return args
@@ -161,8 +162,8 @@ def train_autoencoder():
     model_checkpoint_folder = Path(args.model_checkpoint)
     model_checkpoint_folder.mkdir(exist_ok=True)
 
-    dataloader = shaped_elites_dataset_factory(batch_size=32, is_eval=False)
-    test_dataloader = shaped_elites_dataset_factory(batch_size=8, is_eval=True)
+    dataloader = shaped_elites_dataset_factory(args.include_obsnorm, batch_size=32, is_eval=False)
+    test_dataloader = shaped_elites_dataset_factory(args.include_obsnorm, batch_size=8, is_eval=True)
 
     if args.track_agent_quality:
         env_cfg = AttrDict({
@@ -185,7 +186,7 @@ def train_autoencoder():
         if args.track_agent_quality and epoch % 5 == 0:
             # get a ground truth policy and evaluate it. Then get the reconstructed policy and compare its
             # performance and behavior to the ground truth
-            gt_params, gt_measure = next(iter(test_dataloader))
+            gt_params, gt_measure, obsnorms = next(iter(test_dataloader))
             rec_policies, _ = model(gt_params)
 
             avg_measure_mse = 0
@@ -193,13 +194,21 @@ def train_autoencoder():
             avg_orig_reward = 0
             avg_reconstructed_reward = 0
             for k in range(8):
-                gt_agent = Actor(obs_dim, action_shape, False, False)
+                gt_agent = Actor(obs_dim, action_shape, normalize_obs = not args.include_obsnorm)
+                rec_agent = Actor(obs_dim, action_shape, normalize_obs = not args.include_obsnorm)
+                rec_agent.actor_mean = rec_policies[k]
+                
                 actor_weights = {key: gt_params[key][k] for key in gt_params.keys() if 'actor' in key}
+                if not args.include_obsnorm:
+                    for key in obsnorms.keys():
+                        actor_weights['obs_normalizer.' + key] = obsnorms[key][k]  
+                        rec_agent.obs_normalizer.__setattr__(key, obsnorms[key][k])
                 gt_agent.load_state_dict(actor_weights)
+
                 gt_agent.to(device)
+                rec_agent.to(device)
 
-                rec_agent = rec_policies[k]
-
+                
                 info = compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, env, device, deterministic=True)
 
                 avg_measure_mse += info['measure_mse']
@@ -238,11 +247,11 @@ def train_autoencoder():
         epoch_mse_loss = 0
         epoch_kl_loss = 0        
 
-        for step, (policies, measures) in enumerate(dataloader):
+        for step, (policies, measures, _) in enumerate(dataloader):
             optimizer.zero_grad()
 
             # policies = policies.to(device)
-            measures = measures.to(device)
+            # measures = measures.to(device)
 
             rec_policies, posterior = model(policies)
 
