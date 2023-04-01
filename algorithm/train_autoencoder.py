@@ -124,6 +124,7 @@ def parse_args():
     parser.add_argument('--wandb_run_name', type=str, default='vae_run')
     parser.add_argument('--wandb_group', type=str, default=None)
     parser.add_argument('--wandb_entity', type=str, default=None)
+    parser.add_argument('--wandb_tag', type=str, default=None)
     parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
     parser.add_argument('--include_obsnorm', type=lambda x: bool(strtobool(x)), default=True)
     parser.add_argument('--inp_coef', type=float, default=1)#optimal inp_coef is 0.25
@@ -150,8 +151,9 @@ def train_autoencoder():
                      wandb_group=args.wandb_group, \
                         run_name=args.wandb_run_name, \
                             entity=args.wandb_entity, \
-                                cfg = vars(args) \
-                                    )
+                                tags=args.wandb_tag, \
+                                    cfg = vars(args) \
+                                        )
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_checkpoint = None
@@ -248,7 +250,7 @@ def train_autoencoder():
                 writer.add_scalar('Behaviour/measure_mse_1', avg_measure_mse[1], global_step + 1)
                 writer.add_scalar('Behaviour/orig_reward', avg_orig_reward, global_step + 1)
                 writer.add_scalar('Behaviour/rec_reward', avg_reconstructed_reward, global_step + 1)
-                writer.add_scaler('Behaviour/reward_ratio', reward_ratio, global_step + 1)
+                writer.add_scalar('Behaviour/reward_ratio', reward_ratio, global_step + 1)
                 writer.add_scalar('Behaviour/p-value_0', avg_t_test[0], global_step + 1)
                 writer.add_scalar('Behaviour/p-value_1', avg_t_test[1], global_step + 1)
                 wandb.log({
