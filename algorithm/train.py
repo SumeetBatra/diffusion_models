@@ -14,6 +14,7 @@ from utils.utilities import config_wandb, save_cfg
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from models.unet import num_to_groups, Unet
+from models.cond_unet import ConditionalUNet
 from autoencoders.policy.hypernet import HypernetAutoEncoder as AutoEncoder
 from dataset.policy_dataset import ShapedEliteDataset
 from diffusion.gaussian_diffusion import GaussianDiffusion, cosine_beta_schedule, linear_beta_schedule
@@ -93,10 +94,15 @@ def train(cfg):
         latent_size = 8
 
         logvar = torch.full(fill_value=0., size=(timesteps,))
-        model = Unet(
-            dim=64,
-            channels=latent_channels,
-            dim_mults=(1, 2, 4,),
+        model = ConditionalUNet(
+            in_channels=latent_channels,
+            out_channels=latent_channels,
+            channels=64,
+            n_res_blocks=1,
+            attention_levels=[],
+            channel_multipliers=[1, 2, 4],
+            n_heads=4,
+            d_cond=256,
             logvar=logvar
         )
         autoencoder = AutoEncoder(emb_channels=8, z_channels=4)
@@ -130,7 +136,7 @@ def train(cfg):
             optimizer.zero_grad()
             batch_size = measures.shape[0]
 
-            measures = measures.to(device)
+            measures = measures.type(torch.float32).to(device)
 
             if cfg.latent_diffusion:
                 with torch.no_grad():
@@ -146,7 +152,7 @@ def train(cfg):
             # Algorithm 1 line 3: sample t uniformally for every example in the batch
             t = torch.randint(0, timesteps, (batch_size,), device=device).long()
 
-            losses, info_dict = gauss_diff.compute_training_losses(model, batch, t)
+            losses, info_dict = gauss_diff.compute_training_losses(model, batch, t, model_kwargs={'cond': measures})
             loss = losses.mean()
 
             loss.backward()

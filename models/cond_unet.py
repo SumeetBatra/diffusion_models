@@ -50,7 +50,7 @@ class ResBlock(nn.Module):
 
     def forward(self, x: torch.Tensor, time_emb: torch.Tensor):
         h = self.in_layers(x)
-        time_emb = self.emb_layers(time_emb).type(h.type)
+        time_emb = self.emb_layers(time_emb).type(h.dtype)
         h = h + time_emb[:, :, None, None]
         h = self.out_layers(h)
         return self.skip_connection(x) + h
@@ -89,7 +89,7 @@ class DownSample(nn.Module):
         return self.conv(x)
 
 
-class UNet(nn.Module):
+class ConditionalUNet(nn.Module):
     def __init__(self,
                  *,
                  in_channels: int,
@@ -106,6 +106,13 @@ class UNet(nn.Module):
 
         # log-variance params to optimize saved here if we are doing latent diffusion
         self.logvar = torch.nn.Parameter(logvar, requires_grad=True)
+
+        # embedding layer for the items to condition on
+        self.cond_embed = nn.Sequential(
+            nn.Linear(2, d_cond),
+            nn.SiLU(),
+            nn.Linear(d_cond, d_cond)
+        )
 
         # determine dimensions
         self.channels = channels
@@ -173,10 +180,10 @@ class UNet(nn.Module):
             nn.Conv2d(channels, out_channels, 3, padding=1)
         )
 
-
     def forward(self, x: torch.Tensor, time_steps: torch.Tensor, cond: torch.Tensor):
         x_input_block = []
         t_emb = self.time_embed(time_steps)
+        cond = self.cond_embed(cond)[:, None, :]
 
         for module in self.input_blocks:
             x = module(x, t_emb, cond)

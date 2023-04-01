@@ -81,7 +81,7 @@ class DDIMSampler():
                  temperature: float = 1.,
                  uncond_scale: float = 1.,
                  uncond_cond: Optional[torch.Tensor] = None):
-        e_t = model(x, t)
+        e_t = model(x, t, c)
         x_prev, pred_x0 = self.get_x_prev_and_pred_x0(e_t, index, x, temperature=temperature, repeat_noise=repeat_noise)
         return x_prev, pred_x0, e_t
 
