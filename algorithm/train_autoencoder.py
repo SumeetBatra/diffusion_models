@@ -143,8 +143,12 @@ def train_autoencoder():
 
     if args.use_wandb:
         writer = SummaryWriter(f"runs/{exp_name}")
-        config_wandb(wandb_project=args.wandb_project, wandb_group=args.wandb_group, run_name=args.wandb_run_name, entity=args.wandb_entity)
-
+        config_wandb(wandb_project=args.wandb_project, \
+                     wandb_group=args.wandb_group, \
+                        run_name=args.wandb_run_name, \
+                            entity=args.wandb_entity, \
+                                cfg = vars(args) \
+                                    )
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_checkpoint = None
