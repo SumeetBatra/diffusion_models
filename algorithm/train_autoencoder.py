@@ -104,10 +104,12 @@ def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor
 
     # calculate the loss
     loss = 0
+    loss_info = {}
     for key in pred_weights_dict.keys():
-        loss += F.mse_loss(torch.stack(pred_weights_dict[key]), target_weights_dict[key])
-
-    return loss
+        key_loss = F.mse_loss(torch.stack(pred_weights_dict[key]), target_weights_dict[key])
+        loss += key_loss
+        loss_info[key] = key_loss.item()
+    return loss, loss_info
 
 
 def parse_args():
@@ -161,7 +163,7 @@ def train_autoencoder():
     dataloader = shaped_elites_dataset_factory(batch_size=32, is_eval=False)
     test_dataloader = shaped_elites_dataset_factory(batch_size=8, is_eval=True)
 
-    track_agent_quality = True
+    track_agent_quality = False
     if track_agent_quality:
         env_cfg = AttrDict({
             'env_name': 'halfcheetah',
@@ -244,7 +246,7 @@ def train_autoencoder():
 
             rec_policies, posterior = model(policies)
 
-            policy_mse_loss = mse_loss_func(policies, rec_policies)
+            policy_mse_loss, loss_info = mse_loss_func(policies, rec_policies)
             kl_loss = posterior.kl().mean()
             loss = policy_mse_loss + kl_loss_coef * kl_loss
 
@@ -264,7 +266,9 @@ def train_autoencoder():
             writer.add_scalar("Loss/kl_loss", epoch_kl_loss / len(dataloader), global_step+1)
             wandb.log({'Loss/mse_loss': epoch_mse_loss / len(dataloader), "global_step": global_step+1})
             wandb.log({'Loss/kl_loss': epoch_kl_loss / len(dataloader), "global_step": global_step+1})
-
+            for key in loss_info.keys():
+                writer.add_scalar(f"Loss/{key}", loss_info[key], global_step+1)
+                wandb.log({f"Loss/{key}": loss_info[key], "global_step": global_step+1})
 
     print('Saving final model checkpoint...')
     torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), f'{exp_name}_autoencoder.pt'))
