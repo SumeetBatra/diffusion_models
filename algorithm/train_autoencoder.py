@@ -165,7 +165,7 @@ def train_autoencoder():
     if track_agent_quality:
         env_cfg = AttrDict({
             'env_name': 'halfcheetah',
-            'env_batch_size': 100,
+            'env_batch_size': 20,
             'num_dims': 2,
             'envs_per_model': 1,
             'seed': 0,
