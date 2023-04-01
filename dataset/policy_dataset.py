@@ -143,13 +143,15 @@ class ElitesDataset(Dataset):
 
 
 class ShapedEliteDataset(Dataset):
-    def __init__(self, archive_dfs: list[DataFrame], obs_dim, action_shape, device, normalize_obs=False, is_eval = False):
+    def __init__(self, archive_dfs: list[DataFrame], obs_dim, action_shape, device, \
+                 normalize_obs=False, is_eval = False, inp_coef=0.25):
         archive_df = pandas.concat(archive_dfs)
 
         self.obs_dim = obs_dim
         self.action_shape = action_shape
         self.device = device
         self.is_eval = is_eval
+        self.inp_coef = inp_coef if normalize_obs else 1
 
         self.measures_list = archive_df.filter(regex='measure*').to_numpy()
         self.metadata = archive_df.filter(regex='metadata*').to_numpy()
@@ -180,19 +182,19 @@ class ShapedEliteDataset(Dataset):
             weights_dict = Actor(self.obs_dim, self.action_shape, self.normalize_obs, True).to(self.device).get_deserialized_weights(params)
             obs_normalizer = self.metadata[i][0]['obs_normalizer']
             if self.normalize_obs:
-                weights_dict = self._integrate_obs_normalizer(weights_dict, obs_normalizer)
+                weights_dict = self._integrate_obs_normalizer(weights_dict, obs_normalizer, self.inp_coef)
             weight_dicts.append(weights_dict)
             obsnorms.append(obs_normalizer.state_dict())
         return weight_dicts, obsnorms
 
     @staticmethod
-    def _integrate_obs_normalizer(weights_dict, obs_normalizer):
+    def _integrate_obs_normalizer(weights_dict, obs_normalizer, inp_coef):
         w_in = weights_dict['actor_mean.0.weight']
         b_in = weights_dict['actor_mean.0.bias']
         mean, var = obs_normalizer.obs_rms.mean, obs_normalizer.obs_rms.var
 
-        w_new = w_in / torch.sqrt(var + 1e-8)
-        b_new = b_in - (mean / torch.sqrt(var + 1e-8)) @ w_in.T
+        w_new = inp_coef * (w_in / torch.sqrt(var + 1e-8))
+        b_new =  inp_coef * (b_in - (mean / torch.sqrt(var + 1e-8)) @ w_in.T)
         weights_dict['actor_mean.0.weight'] = w_new
         weights_dict['actor_mean.0.bias'] = b_new
         return weights_dict

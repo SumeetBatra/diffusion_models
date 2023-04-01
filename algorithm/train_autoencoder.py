@@ -60,7 +60,7 @@ def dataset_factory():
     return DataLoader(elite_dataset, batch_size=32, shuffle=True)
 
 
-def shaped_elites_dataset_factory(include_obsnorm = True, batch_size=32, is_eval=False):
+def shaped_elites_dataset_factory(include_obsnorm = True, batch_size=32, is_eval=False, inp_coef=0.25):
     archive_data_path = 'data'
     archive_dfs = []
 
@@ -72,7 +72,9 @@ def shaped_elites_dataset_factory(include_obsnorm = True, batch_size=32, is_eval
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), device=device, normalize_obs=include_obsnorm, is_eval=is_eval)
+    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), \
+                                         device=device, normalize_obs=include_obsnorm, \
+                                            is_eval=is_eval, inp_coef = inp_coef)
 
     return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval)
 
@@ -124,6 +126,7 @@ def parse_args():
     parser.add_argument('--wandb_entity', type=str, default=None)
     parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
     parser.add_argument('--include_obsnorm', type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument('--inp_coef', type=float, default=1)#optimal inp_coef is 0.25
 
     args = parser.parse_args()
     return args
@@ -166,8 +169,11 @@ def train_autoencoder():
     model_checkpoint_folder = Path(args.model_checkpoint)
     model_checkpoint_folder.mkdir(exist_ok=True)
 
-    dataloader = shaped_elites_dataset_factory(args.include_obsnorm, batch_size=32, is_eval=False)
-    test_dataloader = shaped_elites_dataset_factory(args.include_obsnorm, batch_size=8, is_eval=True)
+    dataloader = shaped_elites_dataset_factory(args.include_obsnorm, batch_size=32, \
+                                               is_eval=False, inp_coef=args.inp_coef)
+    test_dataloader = shaped_elites_dataset_factory(args.include_obsnorm, batch_size=8, \
+                                                is_eval=True,  inp_coef=args.inp_coef)
+    inp_coef = dataloader.dataset.inp_coef
 
     if args.track_agent_quality:
         env_cfg = AttrDict({
@@ -209,9 +215,13 @@ def train_autoencoder():
                         rec_agent.obs_normalizer.__setattr__(key, obsnorms[key][k])
                 gt_agent.load_state_dict(actor_weights)
 
+                gt_agent.__setattr__('actor_mean.0.weight', inp_coef * gt_agent.state_dict()['actor_mean.0.weight'])
+                rec_agent.__setattr__('actor_mean.actor_mean.0.weight', inp_coef * rec_agent.state_dict()['actor_mean.actor_mean.0.weight'])
+                gt_agent.__setattr__('actor_mean.0.bias', inp_coef * gt_agent.state_dict()['actor_mean.0.bias'])
+                rec_agent.__setattr__('actor_mean.actor_mean.0.bias', inp_coef * rec_agent.state_dict()['actor_mean.actor_mean.0.bias'])
+
                 gt_agent.to(device)
                 rec_agent.to(device)
-
                 
                 info = compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, env, device, deterministic=True)
 
@@ -225,8 +235,11 @@ def train_autoencoder():
             avg_orig_reward /= 8
             avg_reconstructed_reward /= 8
 
+            reward_ratio = avg_reconstructed_reward / avg_orig_reward
+
             # log.debug(f'T-test p-value: {avg_t_test/8}')
             log.debug(f'Measure MSE: {avg_measure_mse}')
+            log.debug(f'Reward ratio: {reward_ratio}')
 
             # log items to tensorboard and wandb
             if args.use_wandb:
@@ -235,6 +248,7 @@ def train_autoencoder():
                 writer.add_scalar('Behaviour/measure_mse_1', avg_measure_mse[1], global_step + 1)
                 writer.add_scalar('Behaviour/orig_reward', avg_orig_reward, global_step + 1)
                 writer.add_scalar('Behaviour/rec_reward', avg_reconstructed_reward, global_step + 1)
+                writer.add_scaler('Behaviour/reward_ratio', reward_ratio, global_step + 1)
                 writer.add_scalar('Behaviour/p-value_0', avg_t_test[0], global_step + 1)
                 writer.add_scalar('Behaviour/p-value_1', avg_t_test[1], global_step + 1)
                 wandb.log({
@@ -242,9 +256,11 @@ def train_autoencoder():
                     'Behaviour/measure_mse_1': avg_measure_mse[1],
                     'Behaviour/orig_reward': avg_orig_reward,
                     'Behaviour/rec_reward': avg_reconstructed_reward,
+                    'Behaviour/reward_ratio': reward_ratio,
                     'Behaviour/p-value_0': avg_t_test[0],
                     'Behaviour/p-value_1': avg_t_test[1],
                     'global_step': global_step + 1,
+                    'epoch': epoch + 1,
                 })
 
 
