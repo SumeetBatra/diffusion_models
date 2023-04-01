@@ -60,7 +60,7 @@ def dataset_factory():
     return DataLoader(elite_dataset, batch_size=32, shuffle=True)
 
 
-def shaped_elites_dataset_factory(include_obsnorm = True, batch_size=32, is_eval=False, inp_coef=0.25):
+def shaped_elites_dataset_factory(merge_obsnorm = True, batch_size=32, is_eval=False, inp_coef=0.25):
     archive_data_path = 'data'
     archive_dfs = []
 
@@ -73,7 +73,7 @@ def shaped_elites_dataset_factory(include_obsnorm = True, batch_size=32, is_eval
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), \
-                                         device=device, normalize_obs=include_obsnorm, \
+                                         device=device, normalize_obs=merge_obsnorm, \
                                             is_eval=is_eval, inp_coef = inp_coef)
 
     return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval)
@@ -126,7 +126,7 @@ def parse_args():
     parser.add_argument('--wandb_entity', type=str, default=None)
     parser.add_argument('--wandb_tag', type=str, default=None)
     parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
-    parser.add_argument('--include_obsnorm', type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=True)
     parser.add_argument('--inp_coef', type=float, default=1)#optimal inp_coef is 0.25
 
     args = parser.parse_args()
@@ -171,9 +171,9 @@ def train_autoencoder():
     model_checkpoint_folder = Path(args.model_checkpoint)
     model_checkpoint_folder.mkdir(exist_ok=True)
 
-    dataloader = shaped_elites_dataset_factory(args.include_obsnorm, batch_size=32, \
+    dataloader = shaped_elites_dataset_factory(args.merge_obsnorm, batch_size=32, \
                                                is_eval=False, inp_coef=args.inp_coef)
-    test_dataloader = shaped_elites_dataset_factory(args.include_obsnorm, batch_size=8, \
+    test_dataloader = shaped_elites_dataset_factory(args.merge_obsnorm, batch_size=8, \
                                                 is_eval=True,  inp_coef=args.inp_coef)
     inp_coef = dataloader.dataset.inp_coef
 
@@ -206,21 +206,25 @@ def train_autoencoder():
             avg_orig_reward = 0
             avg_reconstructed_reward = 0
             for k in range(8):
-                gt_agent = Actor(obs_dim, action_shape, normalize_obs = not args.include_obsnorm)
-                rec_agent = Actor(obs_dim, action_shape, normalize_obs = not args.include_obsnorm)
+                gt_agent = Actor(obs_dim, action_shape, normalize_obs = not args.merge_obsnorm)
+                rec_agent = Actor(obs_dim, action_shape, normalize_obs = not args.merge_obsnorm)
                 rec_agent.actor_mean = rec_policies[k]
                 
                 actor_weights = {key: gt_params[key][k] for key in gt_params.keys() if 'actor' in key}
-                if not args.include_obsnorm:
-                    for key in obsnorms.keys():
-                        actor_weights['obs_normalizer.' + key] = obsnorms[key][k]  
-                        rec_agent.obs_normalizer.__setattr__(key, obsnorms[key][k])
-                gt_agent.load_state_dict(actor_weights)
+                recon_actor_weights = rec_agent.state_dict()
 
-                gt_agent.__setattr__('actor_mean.0.weight', inp_coef * gt_agent.state_dict()['actor_mean.0.weight'])
-                rec_agent.__setattr__('actor_mean.actor_mean.0.weight', inp_coef * rec_agent.state_dict()['actor_mean.actor_mean.0.weight'])
-                gt_agent.__setattr__('actor_mean.0.bias', inp_coef * gt_agent.state_dict()['actor_mean.0.bias'])
-                rec_agent.__setattr__('actor_mean.actor_mean.0.bias', inp_coef * rec_agent.state_dict()['actor_mean.actor_mean.0.bias'])
+                if not args.merge_obsnorm:
+                    norm_dict = {'obs_normalizer.' + key: obsnorms[key][k] for key in obsnorms.keys()}
+                    actor_weights.update(norm_dict)
+                    recon_actor_weights.update(norm_dict)
+
+                actor_weights['actor_mean.0.weight'] *= (1/inp_coef)
+                actor_weights['actor_mean.0.bias'] *= (1/inp_coef)
+                recon_actor_weights['actor_mean.actor_mean.0.weight'] *= (1/inp_coef)
+                recon_actor_weights['actor_mean.actor_mean.0.bias'] *= (1/inp_coef)
+
+                gt_agent.load_state_dict(actor_weights)
+                rec_agent.load_state_dict(recon_actor_weights)
 
                 gt_agent.to(device)
                 rec_agent.to(device)
@@ -268,7 +272,7 @@ def train_autoencoder():
 
         epoch_mse_loss = 0
         epoch_kl_loss = 0        
-
+        loss_infos = []
         for step, (policies, measures, _) in enumerate(dataloader):
             optimizer.zero_grad()
 
@@ -288,18 +292,25 @@ def train_autoencoder():
             optimizer.step()
             global_step += 1
 
+            loss_info['scaled_actor_mean.0.weight'] = (1/((inp_coef)**2))*loss_info['actor_mean.0.weight']
+            loss_info['scaled_actor_mean.0.bias'] = (1/((inp_coef)**2))*loss_info['actor_mean.0.bias']
             epoch_mse_loss += policy_mse_loss.item()
             epoch_kl_loss += kl_loss.item()
+            loss_infos.append(loss_info)
     
         print(f'Epoch {epoch} MSE Loss: {epoch_mse_loss / len(dataloader)}')
         if args.use_wandb:
+            avg_loss_infos = {key: sum([loss_info[key] for loss_info in loss_infos]) / len(loss_infos) for key in loss_infos[0].keys()}
+
             writer.add_scalar("Loss/mse_loss", epoch_mse_loss / len(dataloader), global_step+1)
             writer.add_scalar("Loss/kl_loss", epoch_kl_loss / len(dataloader), global_step+1)
             wandb.log({'Loss/mse_loss': epoch_mse_loss / len(dataloader), "global_step": global_step+1})
             wandb.log({'Loss/kl_loss': epoch_kl_loss / len(dataloader), "global_step": global_step+1})
-            for key in loss_info.keys():
-                writer.add_scalar(f"Loss/{key}", loss_info[key], global_step+1)
-                wandb.log({f"Loss/{key}": loss_info[key], "global_step": global_step+1})
+            wandb.log({'epoch': epoch + 1, 'global_step': global_step + 1})
+            for key in avg_loss_infos.keys():
+                writer.add_scalar(f"Loss/{key}", avg_loss_infos[key], global_step+1)
+                wandb.log({f"Loss/{key}": avg_loss_infos[key], "global_step": global_step+1})
+            
 
     print('Saving final model checkpoint...')
     torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), f'{exp_name}_autoencoder.pt'))
