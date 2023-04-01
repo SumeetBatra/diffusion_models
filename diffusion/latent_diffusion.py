@@ -14,14 +14,17 @@ class LatentDiffusion(GaussianDiffusion):
         self.vlb_weights[0] = self.vlb_weights[1]
 
     def compute_training_losses(self, model, x_start, t, model_kwargs=None, noise=None):
+        cond = None
         if model_kwargs is None:
             model_kwargs = {}
+        else:
+            cond = model_kwargs['cond']
         if noise is None:
             noise = torch.randn_like(x_start)
 
         x_t = self.q_sample(x_start, t, noise=noise)
 
-        model_output = model(x_t, t)  # TODO: implement conditioning via model_kwargs
+        model_output = model(x_t, t, cond)  # TODO: implement conditioning via model_kwargs
         target = noise
         with torch.no_grad():
             output_mean, output_var = model_output.mean(), model_output.var()
