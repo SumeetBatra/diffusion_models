@@ -122,6 +122,7 @@ def parse_args():
     parser.add_argument('--wandb_run_name', type=str, default='vae_run')
     parser.add_argument('--wandb_group', type=str, default=None)
     parser.add_argument('--wandb_entity', type=str, default=None)
+    parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
 
     args = parser.parse_args()
     return args
@@ -163,8 +164,7 @@ def train_autoencoder():
     dataloader = shaped_elites_dataset_factory(batch_size=32, is_eval=False)
     test_dataloader = shaped_elites_dataset_factory(batch_size=8, is_eval=True)
 
-    track_agent_quality = False
-    if track_agent_quality:
+    if args.track_agent_quality:
         env_cfg = AttrDict({
             'env_name': 'halfcheetah',
             'env_batch_size': 20,
@@ -182,7 +182,7 @@ def train_autoencoder():
     global_step = 0
     for epoch in range(epochs):
 
-        if track_agent_quality and epoch % 5 == 0:
+        if args.track_agent_quality and epoch % 5 == 0:
             # get a ground truth policy and evaluate it. Then get the reconstructed policy and compare its
             # performance and behavior to the ground truth
             gt_params, gt_measure = next(iter(test_dataloader))
@@ -218,19 +218,19 @@ def train_autoencoder():
             # log items to tensorboard and wandb
             if args.use_wandb:
 
-                writer.add_scalar('measure_mse_0', avg_measure_mse[0], global_step + 1)
-                writer.add_scalar('measure_mse_1', avg_measure_mse[1], global_step + 1)
-                writer.add_scalar('orig_reward', avg_orig_reward, global_step + 1)
-                writer.add_scalar('rec_reward', avg_reconstructed_reward, global_step + 1)
-                writer.add_scalar('dist_shift/p-value_0', avg_t_test[0], global_step + 1)
-                writer.add_scalar('dist_shift/p-value_1', avg_t_test[1], global_step + 1)
+                writer.add_scalar('Behaviour/measure_mse_0', avg_measure_mse[0], global_step + 1)
+                writer.add_scalar('Behaviour/measure_mse_1', avg_measure_mse[1], global_step + 1)
+                writer.add_scalar('Behaviour/orig_reward', avg_orig_reward, global_step + 1)
+                writer.add_scalar('Behaviour/rec_reward', avg_reconstructed_reward, global_step + 1)
+                writer.add_scalar('Behaviour/p-value_0', avg_t_test[0], global_step + 1)
+                writer.add_scalar('Behaviour/p-value_1', avg_t_test[1], global_step + 1)
                 wandb.log({
-                    'measure_mse_0': avg_measure_mse[0],
-                    'measure_mse_1': avg_measure_mse[1],
-                    'orig_reward': avg_orig_reward,
-                    'rec_reward': avg_reconstructed_reward,
-                    'dist_shift/p-value_0': avg_t_test[0],
-                    'dist_shift/p-value_1': avg_t_test[1],
+                    'Behaviour/measure_mse_0': avg_measure_mse[0],
+                    'Behaviour/measure_mse_1': avg_measure_mse[1],
+                    'Behaviour/orig_reward': avg_orig_reward,
+                    'Behaviour/rec_reward': avg_reconstructed_reward,
+                    'Behaviour/p-value_0': avg_t_test[0],
+                    'Behaviour/p-value_1': avg_t_test[1],
                     'global_step': global_step + 1,
                 })
 
