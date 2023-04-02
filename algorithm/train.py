@@ -38,7 +38,7 @@ def shaped_elites_dataset_factory():
     archive_data_path = '/home/sumeet/diffusion_models/data'
     archive_dfs = []
 
-    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100_adaptive*.pkl')
+    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100_global*.pkl')
     for path in archive_df_paths:
         with open(path, 'rb') as f:
             archive_df = pickle.load(f)
@@ -77,7 +77,7 @@ def train(cfg):
         config_wandb(run_name=cfg.wandb_run_name, wandb_project=cfg.wandb_project, wandb_group=cfg.wandb_group,
                      cfg=cfg)
 
-    autoencoder_checkpoint_path = Path('./checkpoints/autoencoder.pt')
+    autoencoder_checkpoint_path = Path('./checkpoints/autoencoder_20230401-162949_autoencoder.pt')
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -132,7 +132,7 @@ def train(cfg):
     epochs = 40
     scale_factor = 1.0
     for epoch in range(epochs):
-        for step, (policies, measures) in enumerate(dataloader):
+        for step, (policies, measures, _) in enumerate(dataloader):
             optimizer.zero_grad()
             batch_size = measures.shape[0]
 
