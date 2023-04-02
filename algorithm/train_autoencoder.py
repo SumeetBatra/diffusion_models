@@ -64,7 +64,7 @@ def shaped_elites_dataset_factory(merge_obsnorm = True, batch_size=32, is_eval=F
     archive_data_path = 'data'
     archive_dfs = []
 
-    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100_adaptive*.pkl')
+    archive_df_paths = glob.glob(archive_data_path + '/archive*global*.pkl')
     for path in archive_df_paths:
         with open(path, 'rb') as f:
             archive_df = pickle.load(f)
