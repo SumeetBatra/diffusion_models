@@ -119,6 +119,9 @@ def parse_args():
     parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
     parser.add_argument('--num_epochs', type=int, default=60)
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--emb_channels', type=int, default=512)
+    parser.add_argument('--z_channels', type=int, default=8)
+    parser.add_argument('--z_height', type=int, default=16)
     parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
     parser.add_argument('--wandb_run_name', type=str, default='vae_run')
@@ -157,7 +160,7 @@ def train_autoencoder():
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_checkpoint = None
-    model = HypernetAutoEncoder(emb_channels=8, z_channels=4)
+    model = HypernetAutoEncoder(emb_channels=args.emb_channels, z_channels=args.z_channels, z_height = args.z_height)
     if model_checkpoint is not None:
         print(f'Loading model from checkpoint')
         model.load_state_dict(torch.load(model_checkpoint))

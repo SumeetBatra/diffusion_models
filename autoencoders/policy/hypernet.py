@@ -9,7 +9,7 @@ from RL.actor_critic import Actor
 
 
 class HypernetAutoEncoder(AutoEncoderBase):
-    def __init__(self, emb_channels: int, z_channels: int, normalize_obs: bool = False):
+    def __init__(self, emb_channels: int, z_channels: int, normalize_obs: bool = False, z_height = 4):
         """
         :param emb_channels: is the number of dimensions in the quantized embedding space
         :param z_channels: is the number of channels in the embedding space
@@ -18,7 +18,9 @@ class HypernetAutoEncoder(AutoEncoderBase):
 
         # TODO: refactor
         obs_shape, action_shape = 18, np.array([6])
-        self.encoder = ModelEncoder(obs_shape, action_shape, z_channels)
+        self.encoder = ModelEncoder(obs_shape = obs_shape, action_shape = action_shape, \
+                                    emb_channels = emb_channels, z_channels = z_channels, \
+                                        z_height = z_height)
 
         # config dict for the hypernet decoder
         action_dim, obs_dim = 6, 18
@@ -30,9 +32,13 @@ class HypernetAutoEncoder(AutoEncoderBase):
         config['ve'] = 1 > 1
         config['layernorm'] = True
         config['hid'] = 16
+        config['z_channels'] = z_channels
+        config['z_height'] = z_height        
         config['norm_variables'] = False
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.decoder = MLP_GHN(**config, debug_level=0, device=device)
+
+        print(f"Total size of z is: {self.decoder.z_vec_size}")
 
         def make_actor():
             return Actor(obs_shape=18, action_shape=np.array([action_dim]), deterministic=True, normalize_obs=normalize_obs)
@@ -51,7 +57,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
 
 
 class ModelEncoder(nn.Module):
-    def __init__(self, obs_shape, action_shape, z_channels, obs_norm = False):
+    def __init__(self, obs_shape, action_shape, emb_channels, z_channels, obs_norm = False, z_height = 4):
         super().__init__()
 
         self.obs_norm = obs_norm
@@ -64,6 +70,9 @@ class ModelEncoder(nn.Module):
 
         self.max_pool_kernel_sizes = [2, 2, 2, 2, 2, 2, 2, 2, 2, 1]
         self.max_pool_strides = [2, 2, 2, 2, 2, 2, 2, 2, 2, 1]
+        self.z_channels = z_channels
+        self.emb_channels = emb_channels
+        self.z_height = z_height
 
         self.cnns = {}
         total_op_shape = 0
@@ -99,7 +108,7 @@ class ModelEncoder(nn.Module):
 
         self.cnns = nn.ModuleDict(self.cnns)
 
-        self.out = nn.Linear(total_op_shape, 8 * 4 * z_channels)
+        self.out = nn.Linear(total_op_shape, 2 * self.z_channels * self.z_height * self.z_height)
 
     # create a cnn backbone to extract features from tensor of shape (batch_size, *shape)
     def _create_cnn_backbone(self, shape, leaky_relu=False):
@@ -189,7 +198,7 @@ class ModelEncoder(nn.Module):
 
         x = torch.cat(outs, dim=1)
         x = self.out(x)
-        return x.reshape(-1, 8, 4, 4)
+        return x.reshape(-1, 2 * self.z_channels, self.z_height, self.z_height)
 
     def to(self, device):
         # self.dummy_actor.to(device)
