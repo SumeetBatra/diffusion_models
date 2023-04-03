@@ -64,7 +64,7 @@ def shaped_elites_dataset_factory(merge_obsnorm = True, batch_size=32, is_eval=F
     archive_data_path = 'data'
     archive_dfs = []
 
-    archive_df_paths = glob.glob(archive_data_path + '/archive*global*.pkl')
+    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100_global*.pkl')
     for path in archive_df_paths:
         with open(path, 'rb') as f:
             archive_df = pickle.load(f)
@@ -73,7 +73,7 @@ def shaped_elites_dataset_factory(merge_obsnorm = True, batch_size=32, is_eval=F
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), \
-                                         device=device, normalize_obs=merge_obsnorm, \
+                                         device=device, normalize_obs=False, \
                                             is_eval=is_eval, inp_coef = inp_coef)
 
     return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval)

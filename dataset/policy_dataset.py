@@ -194,7 +194,7 @@ class ShapedEliteDataset(Dataset):
         mean, var = obs_normalizer.obs_rms.mean, obs_normalizer.obs_rms.var
 
         w_new = inp_coef * (w_in / torch.sqrt(var + 1e-8))
-        b_new =  inp_coef * (b_in - (mean / torch.sqrt(var + 1e-8)) @ w_in.T)
+        b_new = inp_coef * (b_in - (mean / torch.sqrt(var + 1e-8)) @ w_in.T)
         weights_dict['actor_mean.0.weight'] = w_new
         weights_dict['actor_mean.0.bias'] = b_new
         return weights_dict
