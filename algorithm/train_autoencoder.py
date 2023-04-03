@@ -120,8 +120,8 @@ def parse_args():
     parser.add_argument('--num_epochs', type=int, default=60)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--emb_channels', type=int, default=512)
-    parser.add_argument('--z_channels', type=int, default=8)
-    parser.add_argument('--z_height', type=int, default=16)
+    parser.add_argument('--z_channels', type=int, default=4)
+    parser.add_argument('--z_height', type=int, default=4)
     parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
     parser.add_argument('--wandb_run_name', type=str, default='vae_run')
@@ -130,7 +130,8 @@ def parse_args():
     parser.add_argument('--wandb_tag', type=str, default=None)
     parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
     parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=True)
-    parser.add_argument('--inp_coef', type=float, default=1)#optimal inp_coef is 0.25
+    parser.add_argument('--inp_coef', type=float, default=1)
+    parser.add_argument('--kl_coef', type=float, default=1e-6)
 
     args = parser.parse_args()
     return args
@@ -169,7 +170,6 @@ def train_autoencoder():
     optimizer = Adam(model.parameters(), lr=1e-3)
 
     mse_loss_func = mse_loss_from_weights_dict
-    kl_loss_coef = 1e-6
 
     model_checkpoint_folder = Path(args.model_checkpoint)
     model_checkpoint_folder.mkdir(exist_ok=True)
@@ -286,7 +286,7 @@ def train_autoencoder():
 
             policy_mse_loss, loss_info = mse_loss_func(policies, rec_policies)
             kl_loss = posterior.kl().mean()
-            loss = policy_mse_loss + kl_loss_coef * kl_loss
+            loss = policy_mse_loss + args.kl_coef * kl_loss
 
             loss.backward()
             # if step % 100 == 0:
