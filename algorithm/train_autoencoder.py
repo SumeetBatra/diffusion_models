@@ -45,7 +45,7 @@ def parse_args():
     parser.add_argument('--wandb_entity', type=str, default='qdrl')
     parser.add_argument('--wandb_tag', type=str, default='halfcheetah')
     parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
-    parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--inp_coef', type=float, default=1)
     parser.add_argument('--kl_coef', type=float, default=1e-6)
 
@@ -87,11 +87,13 @@ def evaluate_agent_quality(env_cfg: dict,
 
         if normalize_obs:
             # TODO: should remove obs_norms since we are using global obs norm now
+            # TODO: or keep it if gloabl obs norm doesn't work for humanoid
             norm_dict = {'obs_normalizer.' + key: obs_norms[key][k] for key in obs_norms.keys()}
             actor_weights.update(norm_dict)
             recon_actor_weights.update(norm_dict)
 
         # TODO: we should get rid of this if we don't need it anymore
+        # TODO: This lets keep for a few core commits
         actor_weights['actor_mean.0.weight'] *= (1 / inp_coef)
         actor_weights['actor_mean.0.bias'] *= (1 / inp_coef)
         recon_actor_weights['actor_mean.actor_mean.0.weight'] *= (1 / inp_coef)
@@ -175,7 +177,7 @@ def shaped_elites_dataset_factory(merge_obsnorm = True, batch_size=32, is_eval=F
                                          obs_dim=18,
                                          action_shape=np.array([6]),
                                          device=device,
-                                         normalize_obs=False,
+                                         normalize_obs=merge_obsnorm,
                                          is_eval=is_eval,
                                          inp_coef=inp_coef,
                                          eval_batch_size=batch_size if is_eval else None,
