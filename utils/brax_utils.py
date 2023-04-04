@@ -5,7 +5,28 @@ import numpy as np
 from RL.actor_critic import Actor
 from utils.utilities import log
 from RL.vectorized import VectorizedActor
+from scipy.stats import multivariate_normal
 
+def kl_divergence(mu1, cov1, mu2, cov2):
+    """
+    Calculates the KL divergence between two Gaussian distributions.
+
+    Parameters:
+    mu1 (numpy array): Mean of the first Gaussian distribution
+    cov1 (numpy array): Covariance matrix of the first Gaussian distribution
+    mu2 (numpy array): Mean of the second Gaussian distribution
+    cov2 (numpy array): Covariance matrix of the second Gaussian distribution
+
+    Returns:
+    KL divergence (float)
+    """
+
+    # calculate KL divergence using formula
+    kl_div = 0.5 * (np.trace(np.linalg.inv(cov2).dot(cov1)) +
+                    np.dot((mu2 - mu1).T, np.dot(np.linalg.inv(cov2), (mu2 - mu1))) -
+                    len(mu1) + np.log(np.linalg.det(cov2) / np.linalg.det(cov1)))
+
+    return kl_div
 
 def rollout_agent(agent: Actor, env_cfg, vec_env, device, deterministic=True):
     if agent.obs_normalizer is not None:
@@ -62,7 +83,20 @@ def compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, vec_env, device, dete
             #   f'\n Measures: {rec_measures.mean(dim=0).detach().cpu().numpy()} +/- {rec_measures.mean(dim=0).std().detach().cpu().numpy()}')
 
     ttest_res = stats.ttest_ind(gt_measures.detach().cpu().numpy(), rec_measures.detach().cpu().numpy(), equal_var=False)
-    return {'t_test': ttest_res,
+
+    # fit a gaussian to the measures of the original policy and another one for those of the reconstructed policy
+    # and compute the KL divergence between the two
+    gt_mean = gt_measures.detach().cpu().numpy().mean(0)
+    gt_cov = np.cov(gt_measures.detach().cpu().numpy().T)
+
+    rec_mean = rec_measures.detach().cpu().numpy().mean(0)
+    rec_cov = np.cov(rec_measures.detach().cpu().numpy().T)
+
+    kl_div = kl_divergence(gt_mean, gt_cov, rec_mean, rec_cov)
+
+    return {
+            'kl_div': kl_div,
+            't_test': ttest_res,
             'measure_mse': torch.square(gt_measures.mean(0) - rec_measures.mean(0)).detach().cpu().numpy(),
             'Rewards/original': gt_rewards.mean().item(),
             'Measures/original': gt_measures.mean(dim=0).detach().cpu().numpy(),
