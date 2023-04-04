@@ -183,7 +183,7 @@ def train(cfg):
     global_step = 0
     for epoch in range(epochs):
 
-        if cfg.track_agent_quality and epoch % 5 == 0:
+        if cfg.track_agent_quality and epoch % 5 == 0 and epoch != 0:  # skip the 0th epoch b/c we need to calculate the scale factor first
             # get latents from the LDM using the DDIM sampler. Then use the VAE decoder
             # to get the policies and evaluate their quality
             gt_params_batch, measures, obsnorms = next(iter(test_dataloader))  # get realistic measures to condition on. TODO maybe make this set of measures fixed?
