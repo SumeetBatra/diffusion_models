@@ -10,15 +10,20 @@ import matplotlib.pyplot as plt
 from attrdict import AttrDict
 from distutils.util import strtobool
 from pathlib import Path
+from datetime import datetime
+from torch.utils.tensorboard import SummaryWriter
 from utils.utilities import config_wandb, save_cfg
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from models.unet import num_to_groups, Unet
 from models.cond_unet import ConditionalUNet
 from autoencoders.policy.hypernet import HypernetAutoEncoder as AutoEncoder
-from dataset.policy_dataset import ShapedEliteDataset
+from train_autoencoder import evaluate_agent_quality
+from dataset.shaped_elites_dataset import ShapedEliteDataset
 from diffusion.gaussian_diffusion import GaussianDiffusion, cosine_beta_schedule, linear_beta_schedule
 from diffusion.latent_diffusion import LatentDiffusion
+from diffusion.ddim import DDIMSampler
+from envs.brax_custom.brax_env import make_vec_env_brax
 
 
 def parse_args():
@@ -26,16 +31,29 @@ def parse_args():
     parser.add_argument('--latent_diffusion', type=lambda x: bool(strtobool(x)), default=True, help='Use latent diffusion or standard (improved) diffusion')
     # wandb args
     parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
-    parser.add_argument('--wandb_project', type=str, default='qd_diffusion')
+    parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
     parser.add_argument('--wandb_run_name', type=str, default='diffusion_run')
-    parser.add_argument('--wandb_group', type=str, default='diffusion_group')
+    parser.add_argument('--wandb_group', type=str, default='debug')
+    parser.add_argument('--wandb_entity', type=str, default='qdrl')
+    parser.add_argument('--wandb_tag', type=str, default='halfcheetah')
+    parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=True)
+    # training hyperparams
+    parser.add_argument('--num_epochs', type=int, default=40)
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--inp_coef', type=float, default=1.0)
+    # VAE / LDM hyperparams
+    parser.add_argument('--emb_channels', type=int, default=512)
+    parser.add_argument('--z_channels', type=int, default=4)
+    parser.add_argument('--z_height', type=int, default=4)
+
     args = parser.parse_args()
     cfg = AttrDict(vars(args))
     return cfg
 
 
-def shaped_elites_dataset_factory():
-    archive_data_path = '/home/sumeet/diffusion_models/data'
+def shaped_elites_dataset_factory(merge_obsnorm = True, batch_size=32, is_eval=False, inp_coef=0.25):
+    archive_data_path = 'data'
     archive_dfs = []
 
     archive_df_paths = glob.glob(archive_data_path + '/archive*100x100_global*.pkl')
@@ -44,11 +62,19 @@ def shaped_elites_dataset_factory():
             archive_df = pickle.load(f)
             archive_dfs.append(archive_df)
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), device=device, normalize_obs=True, is_eval=False)
+    s_elite_dataset = ShapedEliteDataset(archive_dfs,
+                                         obs_dim=18,
+                                         action_shape=np.array([6]),
+                                         device=device,
+                                         normalize_obs=False,
+                                         is_eval=is_eval,
+                                         inp_coef=inp_coef,
+                                         eval_batch_size=batch_size if is_eval else None,
+                                         )
 
-    return DataLoader(s_elite_dataset, batch_size=32, shuffle=True)
+    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval)
 
 
 def grad_norm(model):
@@ -73,11 +99,17 @@ def train(cfg):
     model_checkpoint_folder.mkdir(exist_ok=True)
     model_checkpoint = None
 
-    if cfg.use_wandb:
-        config_wandb(run_name=cfg.wandb_run_name, wandb_project=cfg.wandb_project, wandb_group=cfg.wandb_group,
-                     cfg=cfg)
+    exp_name = 'diffusion_model_' + datetime.now().strftime("%Y%m%d-%H%M%S")
 
-    autoencoder_checkpoint_path = Path('./checkpoints/autoencoder_20230401-162949_autoencoder.pt')
+    if cfg.use_wandb:
+        writer = SummaryWriter(f"runs/{exp_name}")
+        config_wandb(wandb_project=cfg.wandb_project,
+                     wandb_group=cfg.wandb_group,
+                     run_name=cfg.wandb_run_name,
+                     entity=cfg.wandb_entity,
+                     tags=cfg.wandb_tag,
+                     cfg=cfg)
+    autoencoder_checkpoint_path = Path('./checkpoints/autoencoder_20230403-190454_autoencoder.pt')
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -90,8 +122,8 @@ def train(cfg):
 
     autoencoder = None
     if cfg.latent_diffusion:
-        latent_channels = 8
-        latent_size = 8
+        latent_channels = cfg.emb_channels
+        latent_size = cfg.z_height
 
         logvar = torch.full(fill_value=0., size=(timesteps,))
         model = ConditionalUNet(
@@ -105,7 +137,7 @@ def train(cfg):
             d_cond=256,
             logvar=logvar
         )
-        autoencoder = AutoEncoder(emb_channels=8, z_channels=4)
+        autoencoder = AutoEncoder(emb_channels=cfg.emb_channels, z_channels=cfg.z_channels, z_height=cfg.z_height)
         autoencoder.load_state_dict(torch.load(str(autoencoder_checkpoint_path)))
         autoencoder.to(device)
         autoencoder.eval()
@@ -127,12 +159,55 @@ def train(cfg):
 
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
-    dataloader = shaped_elites_dataset_factory()
+    train_batch_size, test_batch_size = 32, 8
+    train_dataloader = shaped_elites_dataset_factory(batch_size=train_batch_size, is_eval=False, inp_coef=cfg.inp_coef)
+    test_dataloader = shaped_elites_dataset_factory(batch_size=test_batch_size, is_eval=True, inp_coef=cfg.inp_coef)
+    inp_coef = cfg.inp_coef
 
-    epochs = 40
+    if cfg.track_agent_quality:
+        env_cfg = AttrDict({
+            'env_name': 'halfcheetah',
+            'env_batch_size': 100,
+            'num_dims': 2,
+            'envs_per_model': 1,
+            'seed': 0,
+            'num_envs': 100,
+        })
+
+        env = make_vec_env_brax(env_cfg)
+
+        sampler = DDIMSampler(gauss_diff, n_steps=100)
+
+    epochs = cfg.num_epochs
     scale_factor = 1.0
+    global_step = 0
     for epoch in range(epochs):
-        for step, (policies, measures, _) in enumerate(dataloader):
+
+        if cfg.track_agent_quality and epoch % 5 == 0:
+            # get latents from the LDM using the DDIM sampler. Then use the VAE decoder
+            # to get the policies and evaluate their quality
+            gt_params_batch, measures, obsnorms = next(iter(test_dataloader))  # get realistic measures to condition on. TODO maybe make this set of measures fixed?
+            measures = measures.type(torch.float32).to(device)
+
+            samples = sampler.sample(model, shape=[test_batch_size, latent_channels, latent_size, latent_size], cond=measures)
+            samples *= (1 / scale_factor)
+            rec_policies = autoencoder.decode(samples)
+
+            info = evaluate_agent_quality(env_cfg, env, gt_params_batch, rec_policies, obsnorms, test_batch_size, inp_coef, device, normalize_obs=not cfg.merge_obsnorm)
+
+            # log items to tensorboard and wandb
+            if cfg.use_wandb:
+                for key, val in info.items():
+                    writer.add_scalar(key, val, global_step + 1)
+
+                info.update({
+                    'global_step': global_step + 1,
+                    'epoch': epoch + 1
+                })
+
+                wandb.log(info)
+
+        for step, (policies, measures, _) in enumerate(train_dataloader):
             optimizer.zero_grad()
             batch_size = measures.shape[0]
 

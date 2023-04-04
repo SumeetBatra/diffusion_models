@@ -8,7 +8,8 @@ import torch.nn.functional as F
 from distutils.util import strtobool
 from pathlib import Path
 from torch.optim import Adam
-from dataset.policy_dataset import ElitesDataset, postprocess_model, ShapedEliteDataset
+from dataset.shaped_elites_dataset import ShapedEliteDataset
+from dataset.tensor_elites_dataset import ElitesDataset, postprocess_model
 from torch.utils.data import DataLoader
 from autoencoders.policy.resnet3d import ResNet3DAutoEncoder
 from autoencoders.policy.transformer import TransformerPolicyAutoencoder
@@ -18,6 +19,7 @@ from envs.brax_custom.brax_env import make_vec_env_brax
 from attrdict import AttrDict
 from utils.brax_utils import compare_rec_to_gt_policy
 from utils.utilities import log, config_wandb
+from functools import partial
 
 
 import scipy.stats as stats
@@ -26,11 +28,108 @@ from datetime import datetime
 import argparse
 import random
 from torch.utils.tensorboard import SummaryWriter
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
+    parser.add_argument('--num_epochs', type=int, default=60)
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--emb_channels', type=int, default=512)
+    parser.add_argument('--z_channels', type=int, default=4)
+    parser.add_argument('--z_height', type=int, default=4)
+    parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
+    parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
+    parser.add_argument('--wandb_run_name', type=str, default='vae_run')
+    parser.add_argument('--wandb_group', type=str, default='debug')
+    parser.add_argument('--wandb_entity', type=str, default='qdrl')
+    parser.add_argument('--wandb_tag', type=str, default='halfcheetah')
+    parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument('--inp_coef', type=float, default=1)
+    parser.add_argument('--kl_coef', type=float, default=1e-6)
+
+    args = parser.parse_args()
+    return args
+
+
 def grad_norm(model):
     sqsum = 0.0
     for p in model.parameters():
         sqsum += (p.grad ** 2).sum().item()
     return np.sqrt(sqsum)
+
+
+def evaluate_agent_quality(env_cfg: dict,
+                           vec_env,
+                           gt_params_batch: dict[str, torch.Tensor],
+                           rec_policies: list[Actor],
+                           obs_norms: dict[str, torch.Tensor],
+                           test_batch_size: int,
+                           inp_coef: float,
+                           device: str,
+                           normalize_obs: bool = False):
+    avg_measure_mse = 0
+    avg_t_test = 0
+    avg_orig_reward = 0
+    avg_reconstructed_reward = 0
+
+    obs_dim = vec_env.single_observation_space.shape[0]
+    action_shape = vec_env.single_action_space.shape
+
+    for k in range(test_batch_size):
+        gt_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs)
+        rec_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs)
+        rec_agent.actor_mean = rec_policies[k]
+
+        actor_weights = {key: gt_params_batch[key][k] for key in gt_params_batch.keys() if 'actor' in key}
+        recon_actor_weights = rec_agent.state_dict()
+
+        if normalize_obs:
+            # TODO: should remove obs_norms since we are using global obs norm now
+            norm_dict = {'obs_normalizer.' + key: obs_norms[key][k] for key in obs_norms.keys()}
+            actor_weights.update(norm_dict)
+            recon_actor_weights.update(norm_dict)
+
+        # TODO: we should get rid of this if we don't need it anymore
+        actor_weights['actor_mean.0.weight'] *= (1 / inp_coef)
+        actor_weights['actor_mean.0.bias'] *= (1 / inp_coef)
+        recon_actor_weights['actor_mean.actor_mean.0.weight'] *= (1 / inp_coef)
+        recon_actor_weights['actor_mean.actor_mean.0.bias'] *= (1 / inp_coef)
+
+        gt_agent.load_state_dict(actor_weights)
+        rec_agent.load_state_dict(recon_actor_weights)
+
+        gt_agent.to(device)
+        rec_agent.to(device)
+
+        info = compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, vec_env, device, deterministic=True)
+
+        avg_measure_mse += info['measure_mse']
+        avg_t_test += info['t_test'].pvalue
+        avg_orig_reward += info['Rewards/original']
+        avg_reconstructed_reward += info['Rewards/reconstructed']
+
+    avg_measure_mse /= test_batch_size
+    avg_t_test /= test_batch_size
+    avg_orig_reward /= test_batch_size
+    avg_reconstructed_reward /= test_batch_size
+
+    reward_ratio = avg_reconstructed_reward / avg_orig_reward
+
+    log.debug(f'Measure MSE: {avg_measure_mse}')
+    log.debug(f'Reward ratio: {reward_ratio}')
+
+    final_info = {
+                    'Behavior/measure_mse_0': avg_measure_mse[0],
+                    'Behavior/measure_mse_1': avg_measure_mse[1],
+                    'Behavior/orig_reward': avg_orig_reward,
+                    'Behavior/rec_reward': avg_reconstructed_reward,
+                    'Behavior/reward_ratio': reward_ratio,
+                    'Behavior/p-value_0': avg_t_test[0],
+                    'Behavior/p-value_1': avg_t_test[1]
+                }
+    return final_info
 
 
 def dataset_factory():
@@ -70,11 +169,17 @@ def shaped_elites_dataset_factory(merge_obsnorm = True, batch_size=32, is_eval=F
             archive_df = pickle.load(f)
             archive_dfs.append(archive_df)
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=18, action_shape=np.array([6]), \
-                                         device=device, normalize_obs=False, \
-                                            is_eval=is_eval, inp_coef = inp_coef)
+    s_elite_dataset = ShapedEliteDataset(archive_dfs,
+                                         obs_dim=18,
+                                         action_shape=np.array([6]),
+                                         device=device,
+                                         normalize_obs=False,
+                                         is_eval=is_eval,
+                                         inp_coef=inp_coef,
+                                         eval_batch_size=batch_size if is_eval else None,
+                                         )
 
     return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval)
 
@@ -114,29 +219,6 @@ def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor
     return loss, loss_info
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
-    parser.add_argument('--num_epochs', type=int, default=60)
-    parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--emb_channels', type=int, default=512)
-    parser.add_argument('--z_channels', type=int, default=4)
-    parser.add_argument('--z_height', type=int, default=4)
-    parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
-    parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
-    parser.add_argument('--wandb_run_name', type=str, default='vae_run')
-    parser.add_argument('--wandb_group', type=str, default=None)
-    parser.add_argument('--wandb_entity', type=str, default=None)
-    parser.add_argument('--wandb_tag', type=str, default=None)
-    parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
-    parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=True)
-    parser.add_argument('--inp_coef', type=float, default=1)
-    parser.add_argument('--kl_coef', type=float, default=1e-6)
-
-    args = parser.parse_args()
-    return args
-
-
 def train_autoencoder():
     # experiment name
     exp_name = 'autoencoder_' + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -174,25 +256,24 @@ def train_autoencoder():
     model_checkpoint_folder = Path(args.model_checkpoint)
     model_checkpoint_folder.mkdir(exist_ok=True)
 
-    dataloader = shaped_elites_dataset_factory(args.merge_obsnorm, batch_size=32, \
+    train_batch_size, test_batch_size = 32, 8
+    dataloader = shaped_elites_dataset_factory(args.merge_obsnorm, batch_size=train_batch_size, \
                                                is_eval=False, inp_coef=args.inp_coef)
-    test_dataloader = shaped_elites_dataset_factory(args.merge_obsnorm, batch_size=8, \
+    test_dataloader = shaped_elites_dataset_factory(args.merge_obsnorm, batch_size=test_batch_size, \
                                                 is_eval=True,  inp_coef=args.inp_coef)
     inp_coef = dataloader.dataset.inp_coef
 
     if args.track_agent_quality:
         env_cfg = AttrDict({
             'env_name': 'halfcheetah',
-            'env_batch_size': 20,
+            'env_batch_size': 100,
             'num_dims': 2,
             'envs_per_model': 1,
             'seed': 0,
-            'num_envs': 20,
+            'num_envs': 100,
         })
 
         env = make_vec_env_brax(env_cfg)
-        obs_dim = env.single_observation_space.shape[0]
-        action_shape = env.single_action_space.shape[0]
 
     epochs = args.num_epochs
     global_step = 0
@@ -204,74 +285,19 @@ def train_autoencoder():
             gt_params, gt_measure, obsnorms = next(iter(test_dataloader))
             rec_policies, _ = model(gt_params)
 
-            avg_measure_mse = 0
-            avg_t_test = 0
-            avg_orig_reward = 0
-            avg_reconstructed_reward = 0
-            for k in range(8):
-                gt_agent = Actor(obs_dim, action_shape, normalize_obs = not args.merge_obsnorm)
-                rec_agent = Actor(obs_dim, action_shape, normalize_obs = not args.merge_obsnorm)
-                rec_agent.actor_mean = rec_policies[k]
-                
-                actor_weights = {key: gt_params[key][k] for key in gt_params.keys() if 'actor' in key}
-                recon_actor_weights = rec_agent.state_dict()
-
-                if not args.merge_obsnorm:
-                    norm_dict = {'obs_normalizer.' + key: obsnorms[key][k] for key in obsnorms.keys()}
-                    actor_weights.update(norm_dict)
-                    recon_actor_weights.update(norm_dict)
-
-                actor_weights['actor_mean.0.weight'] *= (1/inp_coef)
-                actor_weights['actor_mean.0.bias'] *= (1/inp_coef)
-                recon_actor_weights['actor_mean.actor_mean.0.weight'] *= (1/inp_coef)
-                recon_actor_weights['actor_mean.actor_mean.0.bias'] *= (1/inp_coef)
-
-                gt_agent.load_state_dict(actor_weights)
-                rec_agent.load_state_dict(recon_actor_weights)
-
-                gt_agent.to(device)
-                rec_agent.to(device)
-                
-                info = compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, env, device, deterministic=True)
-
-                avg_measure_mse += info['measure_mse']
-                avg_t_test += info['t_test'].pvalue
-                avg_orig_reward += info['Rewards/original']
-                avg_reconstructed_reward += info['Rewards/reconstructed']
-
-            avg_measure_mse /= 8
-            avg_t_test /= 8
-            avg_orig_reward /= 8
-            avg_reconstructed_reward /= 8
-
-            reward_ratio = avg_reconstructed_reward / avg_orig_reward
-
-            # log.debug(f'T-test p-value: {avg_t_test/8}')
-            log.debug(f'Measure MSE: {avg_measure_mse}')
-            log.debug(f'Reward ratio: {reward_ratio}')
+            info = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, inp_coef, device, normalize_obs=not args.merge_obsnorm)
 
             # log items to tensorboard and wandb
             if args.use_wandb:
+                for key, val in info.items():
+                    writer.add_scalar(key, val, global_step + 1)
 
-                writer.add_scalar('Behaviour/measure_mse_0', avg_measure_mse[0], global_step + 1)
-                writer.add_scalar('Behaviour/measure_mse_1', avg_measure_mse[1], global_step + 1)
-                writer.add_scalar('Behaviour/orig_reward', avg_orig_reward, global_step + 1)
-                writer.add_scalar('Behaviour/rec_reward', avg_reconstructed_reward, global_step + 1)
-                writer.add_scalar('Behaviour/reward_ratio', reward_ratio, global_step + 1)
-                writer.add_scalar('Behaviour/p-value_0', avg_t_test[0], global_step + 1)
-                writer.add_scalar('Behaviour/p-value_1', avg_t_test[1], global_step + 1)
-                wandb.log({
-                    'Behaviour/measure_mse_0': avg_measure_mse[0],
-                    'Behaviour/measure_mse_1': avg_measure_mse[1],
-                    'Behaviour/orig_reward': avg_orig_reward,
-                    'Behaviour/rec_reward': avg_reconstructed_reward,
-                    'Behaviour/reward_ratio': reward_ratio,
-                    'Behaviour/p-value_0': avg_t_test[0],
-                    'Behaviour/p-value_1': avg_t_test[1],
+                info.update({
                     'global_step': global_step + 1,
-                    'epoch': epoch + 1,
+                    'epoch': epoch + 1
                 })
 
+                wandb.log(info)
 
         epoch_mse_loss = 0
         epoch_kl_loss = 0        

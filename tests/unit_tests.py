@@ -2,7 +2,7 @@ import torch
 import numpy as np
 
 from RL.actor_critic import Actor
-from dataset.policy_dataset import preprocess_model, postprocess_model
+from dataset.shaped_elites_dataset import preprocess_model, postprocess_model
 
 
 def test_pre_post_process():
