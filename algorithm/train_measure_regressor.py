@@ -106,7 +106,7 @@ def train_regressor():
             # policies = policies.to(device)
             measures = measures.to(device).to(torch.float32)
 
-            pred_measure = model(policies)
+            pred_measure, _ = model(policies)
 
 
             loss = F.mse_loss(pred_measure, measures)

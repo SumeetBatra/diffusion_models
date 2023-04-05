@@ -13,7 +13,7 @@ from dataset.tensor_elites_dataset import ElitesDataset, postprocess_model
 from torch.utils.data import DataLoader
 from autoencoders.policy.resnet3d import ResNet3DAutoEncoder
 from autoencoders.policy.transformer import TransformerPolicyAutoencoder
-from autoencoders.policy.hypernet import HypernetAutoEncoder
+from autoencoders.policy.hypernet import HypernetAutoEncoder, ModelEncoder
 from RL.actor_critic import Actor
 from envs.brax_custom.brax_env import make_vec_env_brax
 from attrdict import AttrDict
@@ -48,6 +48,7 @@ def parse_args():
     parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--inp_coef', type=float, default=1)
     parser.add_argument('--kl_coef', type=float, default=1e-6)
+    parser.add_argument('--perceptual_loss', type=float, default=0)
 
     args = parser.parse_args()
     return args
@@ -256,6 +257,19 @@ def train_autoencoder():
         model.load_state_dict(torch.load(model_checkpoint))
     model.to(device)
 
+    if args.perceptual_loss > 0:
+        obs_shape, action_shape = 18, np.array([6])
+        encoder_pretrained = ModelEncoder(obs_shape = obs_shape, action_shape = action_shape, \
+                                    emb_channels = args.emb_channels, z_channels = args.z_channels, \
+                                    z_height = args.z_height,
+                                    regress_to_measure = True)
+        encoder_pretrained.load_state_dict(torch.load('checkpoints/regressor.pt'))
+        encoder_pretrained.to(device)
+        # freeze the encoder
+        for param in encoder_pretrained.parameters():
+            param.requires_grad = False
+            
+
     optimizer = Adam(model.parameters(), lr=1e-3)
 
     mse_loss_func = mse_loss_from_weights_dict
@@ -320,6 +334,22 @@ def train_autoencoder():
             policy_mse_loss, loss_info = mse_loss_func(policies, rec_policies)
             kl_loss = posterior.kl().mean()
             loss = policy_mse_loss + args.kl_coef * kl_loss
+
+            if args.perceptual_loss > 0:
+                # get the features from the pretrained encoder
+                _, gt_features = encoder_pretrained(policies)
+                pred_weights_dict = {}
+                for agent in rec_policies:
+                    for name, param in agent.named_parameters():
+                        if name not in pred_weights_dict:
+                            pred_weights_dict[name] = []
+                        pred_weights_dict[name].append(param)    
+                for key, val in pred_weights_dict.items():
+                    pred_weights_dict[key] = torch.stack(val, dim=0)  
+                pred_weights_dict['actor_logstd'] = policies['actor_logstd'] 
+                _, rec_features = encoder_pretrained(pred_weights_dict)
+                perceptual_loss = F.mse_loss(gt_features, rec_features)
+                loss += args.perceptual_loss * perceptual_loss
 
             loss.backward()
             # if step % 100 == 0:

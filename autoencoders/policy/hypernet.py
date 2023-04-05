@@ -205,7 +205,7 @@ class ModelEncoder(nn.Module):
         if not self.regress_to_measure:
             return x.reshape(-1, 2 * self.z_channels, self.z_height, self.z_height)
         else:
-            return self.measure_out(x)
+            return self.measure_out(x), x
 
 
     def to(self, device):
