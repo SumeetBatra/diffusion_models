@@ -9,7 +9,7 @@ from typing import Union, Optional
 from pandas import DataFrame
 from torch.utils.data import Dataset, DataLoader
 from RL.actor_critic import Actor
-from ribs.archives._elite import EliteBatch
+# from ribs.archives._elite import EliteBatch
 from tqdm import tqdm
 
 
