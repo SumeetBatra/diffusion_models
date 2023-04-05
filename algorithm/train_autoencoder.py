@@ -48,7 +48,7 @@ def parse_args():
     parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--inp_coef', type=float, default=1)
     parser.add_argument('--kl_coef', type=float, default=1e-6)
-    parser.add_argument('--perceptual_loss', type=float, default=0)
+    parser.add_argument('--perceptual_loss_coef', type=float, default=0)
 
     args = parser.parse_args()
     return args
@@ -257,12 +257,14 @@ def train_autoencoder():
         model.load_state_dict(torch.load(model_checkpoint))
     model.to(device)
 
-    if args.perceptual_loss > 0:
+    if args.perceptual_loss_coef > 0:
         obs_shape, action_shape = 18, np.array([6])
-        encoder_pretrained = ModelEncoder(obs_shape = obs_shape, action_shape = action_shape, \
-                                    emb_channels = args.emb_channels, z_channels = args.z_channels, \
-                                    z_height = args.z_height,
-                                    regress_to_measure = True)
+        encoder_pretrained = ModelEncoder(obs_shape=obs_shape,
+                                          action_shape=action_shape,
+                                          emb_channels=args.emb_channels,
+                                          z_channels=args.z_channels,
+                                          z_height=args.z_height,
+                                          regress_to_measure=True)
         encoder_pretrained.load_state_dict(torch.load('checkpoints/regressor.pt'))
         encoder_pretrained.to(device)
         # freeze the encoder
@@ -335,7 +337,7 @@ def train_autoencoder():
             kl_loss = posterior.kl().mean()
             loss = policy_mse_loss + args.kl_coef * kl_loss
 
-            if args.perceptual_loss > 0:
+            if args.perceptual_loss_coef > 0:
                 # get the features from the pretrained encoder
                 _, gt_features = encoder_pretrained(policies)
                 pred_weights_dict = {}
@@ -349,7 +351,7 @@ def train_autoencoder():
                 pred_weights_dict['actor_logstd'] = policies['actor_logstd'] 
                 _, rec_features = encoder_pretrained(pred_weights_dict)
                 perceptual_loss = F.mse_loss(gt_features, rec_features)
-                loss += args.perceptual_loss * perceptual_loss
+                loss += args.perceptual_loss_coef * perceptual_loss
 
             loss.backward()
             # if step % 100 == 0:

@@ -50,8 +50,6 @@ def grad_norm(model):
     return np.sqrt(sqsum)
 
 
-
-
 def train_regressor():
     # experiment name
     exp_name = 'regressor_' + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -77,10 +75,12 @@ def train_regressor():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_checkpoint = None
     obs_shape, action_shape = 18, np.array([6])
-    model = ModelEncoder(obs_shape = obs_shape, action_shape = action_shape, \
-                                    emb_channels = args.emb_channels, z_channels = args.z_channels, \
-                                    z_height = args.z_height,
-                                    regress_to_measure = True)
+    model = ModelEncoder(obs_shape=obs_shape,
+                         action_shape=action_shape,
+                         emb_channels=args.emb_channels,
+                         z_channels=args.z_channels,
+                         z_height=args.z_height,
+                         regress_to_measure=True)
     if model_checkpoint is not None:
         print(f'Loading model from checkpoint')
         model.load_state_dict(torch.load(model_checkpoint))
@@ -92,7 +92,7 @@ def train_regressor():
     model_checkpoint_folder.mkdir(exist_ok=True)
 
     train_batch_size = 32
-    dataloader = shaped_elites_dataset_factory(args.merge_obsnorm, batch_size=train_batch_size, \
+    dataloader = shaped_elites_dataset_factory(args.merge_obsnorm, batch_size=train_batch_size,
                                                is_eval=False, inp_coef=args.inp_coef)
 
     epochs = args.num_epochs

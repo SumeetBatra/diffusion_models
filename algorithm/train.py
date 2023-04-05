@@ -24,6 +24,7 @@ from diffusion.gaussian_diffusion import GaussianDiffusion, cosine_beta_schedule
 from diffusion.latent_diffusion import LatentDiffusion
 from diffusion.ddim import DDIMSampler
 from envs.brax_custom.brax_env import make_vec_env_brax
+from utils.utilities import log
 
 
 def parse_args():
@@ -46,6 +47,7 @@ def parse_args():
     parser.add_argument('--emb_channels', type=int, default=512)
     parser.add_argument('--z_channels', type=int, default=4)
     parser.add_argument('--z_height', type=int, default=4)
+    parser.add_argument('--autoencoder_cp_path', type=str)
 
     args = parser.parse_args()
     cfg = AttrDict(vars(args))
@@ -109,7 +111,8 @@ def train(cfg):
                      entity=cfg.wandb_entity,
                      tags=cfg.wandb_tag,
                      cfg=cfg)
-    autoencoder_checkpoint_path = Path('./checkpoints/autoencoder_20230403-190454_autoencoder.pt')
+    autoencoder_checkpoint_path = Path(cfg.autoencoder_cp_path)
+    log.debug(f'Loading autoencoder checkpoint {cfg.autoencoder_cp_path}')
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
