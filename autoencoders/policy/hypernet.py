@@ -57,7 +57,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
 
 
 class ModelEncoder(nn.Module):
-    def __init__(self, obs_shape, action_shape, emb_channels, z_channels, obs_norm = False, z_height = 4):
+    def __init__(self, obs_shape, action_shape, emb_channels, z_channels, obs_norm = False, z_height = 4, regress_to_measure = False, measure_dim = 2):
         super().__init__()
 
         self.obs_norm = obs_norm
@@ -73,6 +73,8 @@ class ModelEncoder(nn.Module):
         self.z_channels = z_channels
         self.emb_channels = emb_channels
         self.z_height = z_height
+        self.regress_to_measure = regress_to_measure
+        self.measure_dim = measure_dim
 
         self.cnns = {}
         total_op_shape = 0
@@ -109,6 +111,8 @@ class ModelEncoder(nn.Module):
         self.cnns = nn.ModuleDict(self.cnns)
 
         self.out = nn.Linear(total_op_shape, 2 * self.z_channels * self.z_height * self.z_height)
+        if self.regress_to_measure:
+            self.measure_out = nn.Linear(2 * self.z_channels * self.z_height * self.z_height, self.measure_dim)
 
     # create a cnn backbone to extract features from tensor of shape (batch_size, *shape)
     def _create_cnn_backbone(self, shape, leaky_relu=False):
@@ -198,11 +202,17 @@ class ModelEncoder(nn.Module):
 
         x = torch.cat(outs, dim=1)
         x = self.out(x)
-        return x.reshape(-1, 2 * self.z_channels, self.z_height, self.z_height)
+        if not self.regress_to_measure:
+            return x.reshape(-1, 2 * self.z_channels, self.z_height, self.z_height)
+        else:
+            return self.measure_out(x)
+
 
     def to(self, device):
         # self.dummy_actor.to(device)
         for cnn in self.cnns.values():
             cnn.to(device)
         self.out.to(device)
+        if self.regress_to_measure:
+            self.measure_out.to(device)
         return self
