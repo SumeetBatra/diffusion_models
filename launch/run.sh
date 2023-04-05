@@ -9,18 +9,24 @@
 seed=111
 
 
-z_c=8
-z_h=16
-tags=LDM16
+pl=0
 
-# z_c=4
-# z_h=32
-# tags=LDM8
+# pl=0.001
 
-# z_c=3
-# z_h=64
-# tags=LDM4
+# pl=0.005
 
+# pl=0.01
+
+# pl=0.05
+
+# pl=0.1
+
+# pl=0.5
+
+# pl=1
+
+
+tags=plabl
 
 # train
 
@@ -28,4 +34,4 @@ srun \
 python -m algorithm.train_autoencoder \
 --seed $seed --use_wandb True --num_epochs 200 \
 --merge_obsnorm False --wandb_tag $tags --inp_coef 1 \
---z_channels $z_c --z_height $z_h
+--perceptual_loss $pl
