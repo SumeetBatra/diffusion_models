@@ -20,6 +20,7 @@ from attrdict import AttrDict
 from utils.brax_utils import compare_rec_to_gt_policy
 from utils.utilities import log, config_wandb
 from functools import partial
+from losses.contperceptual import LPIPS
 
 
 import scipy.stats as stats
@@ -227,6 +228,22 @@ def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor
     return loss, loss_info
 
 
+def agent_to_weights_dict(agents: list[Actor]):
+    '''Converts a batch of agents of type 'Actor' to a dict of batched weights'''
+    weights_dict = {}
+    for agent in agents:
+        for name, param in agent.named_parameters():
+            if name not in weights_dict:
+                weights_dict[name] = []
+            weights_dict[name].append(param)
+
+    # convert lists to torch tensors
+    for key in weights_dict.keys():
+        weights_dict[key] = torch.stack(weights_dict[key])
+
+    return weights_dict
+
+
 def train_autoencoder():
     # experiment name
     exp_name = 'autoencoder_' + datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -271,6 +288,8 @@ def train_autoencoder():
         # freeze the encoder
         for param in encoder_pretrained.parameters():
             param.requires_grad = False
+        # 'perceptual loss' using deep features
+        percept_loss = LPIPS(behavior_predictor=encoder_pretrained, spatial=False)
             
 
     optimizer = Adam(model.parameters(), lr=1e-3)
@@ -324,7 +343,8 @@ def train_autoencoder():
                 wandb.log(info)
 
         epoch_mse_loss = 0
-        epoch_kl_loss = 0        
+        epoch_kl_loss = 0
+        epoch_perceptual_loss = 0
         loss_infos = []
         for step, (policies, measures, _) in enumerate(dataloader):
             optimizer.zero_grad()
@@ -339,19 +359,11 @@ def train_autoencoder():
             loss = policy_mse_loss + args.kl_coef * kl_loss
 
             if args.perceptual_loss_coef > 0:
-                # get the features from the pretrained encoder
-                _, gt_features = encoder_pretrained(policies)
-                pred_weights_dict = {}
-                for agent in rec_policies:
-                    for name, param in agent.named_parameters():
-                        if name not in pred_weights_dict:
-                            pred_weights_dict[name] = []
-                        pred_weights_dict[name].append(param)    
-                for key, val in pred_weights_dict.items():
-                    pred_weights_dict[key] = torch.stack(val, dim=0)  
-                pred_weights_dict['actor_logstd'] = policies['actor_logstd'] 
-                _, rec_features = encoder_pretrained(pred_weights_dict)
-                perceptual_loss = F.mse_loss(gt_features, rec_features)
+                rec_weights_dict = agent_to_weights_dict(rec_policies)
+                rec_weights_dict['actor_logstd'] = policies['actor_logstd']
+                perceptual_loss = percept_loss(policies, rec_weights_dict).mean()
+
+                epoch_perceptual_loss += perceptual_loss.item()
                 loss += args.perceptual_loss_coef * perceptual_loss
 
             loss.backward()
@@ -373,9 +385,15 @@ def train_autoencoder():
 
             writer.add_scalar("Loss/mse_loss", epoch_mse_loss / len(dataloader), global_step+1)
             writer.add_scalar("Loss/kl_loss", epoch_kl_loss / len(dataloader), global_step+1)
-            wandb.log({'Loss/mse_loss': epoch_mse_loss / len(dataloader), "global_step": global_step+1})
-            wandb.log({'Loss/kl_loss': epoch_kl_loss / len(dataloader), "global_step": global_step+1})
-            wandb.log({'epoch': epoch + 1, 'global_step': global_step + 1})
+            writer.add_scalar("Loss/perceptual_loss", epoch_perceptual_loss / len(dataloader), global_step+1)
+            wandb.log({
+                # TODO: why are we dividing by the length of the dataloader?
+                'Loss/mse_loss': epoch_mse_loss / len(dataloader),
+                'Loss/kl_loss': epoch_kl_loss / len(dataloader),
+                'Loss/perceptual_loss': epoch_perceptual_loss / len(dataloader),
+                'epoch': epoch + 1,
+                'global_step': global_step + 1
+            })
             for key in avg_loss_infos.keys():
                 writer.add_scalar(f"Loss/{key}", avg_loss_infos[key], global_step+1)
                 wandb.log({f"Loss/{key}": avg_loss_infos[key], "global_step": global_step+1})

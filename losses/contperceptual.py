@@ -26,7 +26,7 @@ def normalize_tensor(in_feat,eps=1e-10):
 
 
 def spatial_average(in_tens, keepdim=True):
-    return in_tens.mean([2,3],keepdim=keepdim)
+    return in_tens.mean([2, 3], keepdim=keepdim)
 
 
 def upsample(in_tens, out_HW=(64,64)): # assumes scale factor is same for H and W
@@ -62,7 +62,7 @@ class LPIPS(nn.Module):
 
         num_features = len(self.behavior_predictor.cnns) + 1  # all cnns + 2nd to last dense layer
         for kk in range(num_features):
-            gt_features[kk], rec_features[kk] = normalize_tensor(gt_preds[kk]), normalize_tensor(rec_features[kk])
+            gt_features[kk], rec_features[kk] = normalize_tensor(gt_preds[kk]), normalize_tensor(rec_preds[kk])
             diffs[kk] = (gt_features[kk] - rec_features[kk])**2
 
         if self.spatial:
@@ -75,7 +75,7 @@ class LPIPS(nn.Module):
         for l in range(num_features):
             val += res[l]
 
-        return val
+        return val.view(-1)
 
 
 class LPIPSWithDiscriminator(nn.Module):

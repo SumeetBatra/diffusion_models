@@ -7,7 +7,6 @@ from autoencoders.autoencoder_base import AutoEncoderBase
 from models.hyper.ghn_modules import *
 from RL.actor_critic import Actor
 
-
 class HypernetAutoEncoder(AutoEncoderBase):
     def __init__(self, emb_channels: int, z_channels: int, normalize_obs: bool = False, z_height = 4):
         """
@@ -176,22 +175,29 @@ class ModelEncoder(nn.Module):
 
     def forward(self, x, get_intermediate_features=False):
         outs = []
+        features = []
         for k in range(len(self.list_of_weight_names)):
             name = self.list_of_weight_names[k]
             real_name = self.list_of_real_weight_names[k]
             if 'weight' in name:
                 out = self.cnns[name](x[real_name].unsqueeze(1))
+                if get_intermediate_features:
+                    features.append(out)
                 out = out.view(out.size(0), -1)
                 outs.append(out)
             elif 'bias' in name:
                 out = self.cnns[name](x[real_name].unsqueeze(1))
+                if get_intermediate_features:
+                    features.append(out[:, :, :, None])
                 out = out.view(out.size(0), -1)
                 outs.append(out)
             else:
                 out = self.cnns[name](x[real_name].unsqueeze(1))
+                if get_intermediate_features:
+                    features.append(out)
                 out = out.view(out.size(0), -1)
                 outs.append(out)
-        
+
         if self.obs_norm:
             out = self.cnns['rms_mean'](x['rms_mean'].unsqueeze(1))
             out = out.view(out.size(0), -1)
@@ -203,8 +209,7 @@ class ModelEncoder(nn.Module):
         x = torch.cat(outs, dim=1)
         x = self.out(x)
         if get_intermediate_features:
-            features = outs
-            features.append(x)
+            features.append(x[:, :, None, None])
             # TODO: @Shank should we also append the outputs of self.measure_out? I think
             # TODO: since self.out() is the 2nd to last layer, this should be enough?
             return features
