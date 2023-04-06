@@ -211,7 +211,10 @@ class ModelEncoder(nn.Module):
         if get_intermediate_features:
             features.append(x[:, :, None, None])
             # TODO: @Shank should we also append the outputs of self.measure_out? I think
-            # TODO: since self.out() is the 2nd to last layer, this should be enough?
+            # TODO: since self.out() is the 2nd to last layer, this should be enough?,
+            # TODO: @Sumeet yea lets add it just in case
+            if self.regress_to_measure:
+                features.append(self.measure_out(x)[:, :, None, None])
             return features
         if not self.regress_to_measure:
             return x.reshape(-1, 2 * self.z_channels, self.z_height, self.z_height)

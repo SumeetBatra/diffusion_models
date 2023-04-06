@@ -60,7 +60,8 @@ class LPIPS(nn.Module):
         rec_preds = self.behavior_predictor(rec_policy_weights, get_intermediate_features=True)
         gt_features, rec_features, diffs = {}, {}, {}
 
-        num_features = len(self.behavior_predictor.cnns) + 1  # all cnns + 2nd to last dense layer
+        # num_features = len(self.behavior_predictor.cnns) + 1  # all cnns + 2nd to last dense layer
+        num_features = len(rec_preds)
         for kk in range(num_features):
             gt_features[kk], rec_features[kk] = normalize_tensor(gt_preds[kk]), normalize_tensor(rec_preds[kk])
             diffs[kk] = (gt_features[kk] - rec_features[kk])**2
