@@ -174,7 +174,7 @@ class ModelEncoder(nn.Module):
         fc.add_module('relu3', nn.ReLU(inplace=True))
         return fc, (1, 1, 256, 1)
 
-    def forward(self, x):
+    def forward(self, x, get_intermediate_features=False):
         outs = []
         for k in range(len(self.list_of_weight_names)):
             name = self.list_of_weight_names[k]
@@ -202,6 +202,12 @@ class ModelEncoder(nn.Module):
 
         x = torch.cat(outs, dim=1)
         x = self.out(x)
+        if get_intermediate_features:
+            features = outs
+            features.append(x)
+            # TODO: @Shank should we also append the outputs of self.measure_out? I think
+            # TODO: since self.out() is the 2nd to last layer, this should be enough?
+            return features
         if not self.regress_to_measure:
             return x.reshape(-1, 2 * self.z_channels, self.z_height, self.z_height)
         else:

@@ -265,7 +265,8 @@ def train_autoencoder():
                                           z_channels=args.z_channels,
                                           z_height=args.z_height,
                                           regress_to_measure=True)
-        encoder_pretrained.load_state_dict(torch.load('checkpoints/regressor.pt'))
+        regressor_path = glob.glob('checkpoints/*regressor*')[0]
+        encoder_pretrained.load_state_dict(torch.load(regressor_path))
         encoder_pretrained.to(device)
         # freeze the encoder
         for param in encoder_pretrained.parameters():
