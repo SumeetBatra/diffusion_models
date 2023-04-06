@@ -9,66 +9,8 @@ from collections import OrderedDict
 from ribs.archives import GridArchive
 from utils.brax_utils import rollout_many_agents
 from utils.archive_utils import archive_df_to_archive, reevaluate_ppga_archive
+from utils.brax_utils import shared_params
 from envs.brax_custom import reward_offset
-
-shared_params = OrderedDict({
-    'walker2d':
-        {
-            'objective_range': (0, 5000),
-            'objective_resolution': 100,
-            'archive_resolution': 2500,
-            'skip_len': 200,
-            'algorithm_name': 'cma_mae_100_0.01',
-            'env_cfg': {
-                'env_name': 'walker2d',
-                'num_dims': 2,
-                'episode_length': 1000,
-                'grid_size': 50
-            }
-        },
-    'halfcheetah':
-        {
-            'objective_range': (0, 9000),
-            'objective_resolution': 100,
-            'archive_resolution': 2500,
-            'skip_len': 200,
-            'algorithm_name': 'cma_mae_100_0.01',
-            'env_cfg': {
-                'env_name': 'halfcheetah',
-                'num_dims': 2,
-                'episode_length': 1000,
-                'grid_size': 100
-            }
-        },
-    'humanoid':
-        {
-            'objective_range': (0, 10000),
-            'objective_resolution': 100,
-            'archive_resolution': 2500,
-            'skip_len': 200,
-            'algorithm_name': 'cma_mae_100_0.01',
-            'env_cfg': {
-                'env_name': 'humanoid',
-                'num_dims': 2,
-                'episode_length': 1000,
-                'grid_size': 50
-            }
-        },
-    'ant':
-        {
-            'objective_range': (0, 7000),
-            'objective_resolution': 100,
-            'archive_resolution': 10000,
-            'skip_len': 200,
-            'algorithm_name': 'cma_mae_100_0.01',
-            'env_cfg': {
-                'env_name': 'ant',
-                'num_dims': 4,
-                'episode_length': 1000,
-                'grid_size': 10,
-            }
-        }
-})
 
 
 def evaluate_vae_subsample(env_name: str, model_path: str, archive_df_path: str, N: int = 100):

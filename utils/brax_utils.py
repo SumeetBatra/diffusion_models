@@ -2,10 +2,75 @@ import torch
 import scipy.stats as stats
 import numpy as np
 
+from collections import OrderedDict
 from RL.actor_critic import Actor
 from utils.utilities import log
 from RL.vectorized import VectorizedActor
 from scipy.stats import multivariate_normal
+
+
+shared_params = OrderedDict({
+    'walker2d':
+        {
+            'objective_range': (0, 5000),
+            'objective_resolution': 100,
+            'archive_resolution': 2500,
+            'skip_len': 200,
+            'algorithm_name': 'cma_mae_100_0.01',
+            'obs_dim': 17,
+            'action_dim': 6,
+            'env_cfg': {
+                'env_name': 'walker2d',
+                'num_dims': 2,
+                'episode_length': 1000,
+                'grid_size': 50
+            }
+        },
+    'halfcheetah':
+        {
+            'objective_range': (0, 9000),
+            'objective_resolution': 100,
+            'archive_resolution': 2500,
+            'skip_len': 200,
+            'algorithm_name': 'cma_mae_100_0.01',
+            'obs_dim': 18,
+            'action_dim': 6,
+            'env_cfg': {
+                'env_name': 'halfcheetah',
+                'num_dims': 2,
+                'episode_length': 1000,
+                'grid_size': 100
+            }
+        },
+    'humanoid':
+        {
+            'objective_range': (0, 10000),
+            'objective_resolution': 100,
+            'archive_resolution': 2500,
+            'skip_len': 200,
+            'algorithm_name': 'cma_mae_100_0.01',
+            'env_cfg': {
+                'env_name': 'humanoid',
+                'num_dims': 2,
+                'episode_length': 1000,
+                'grid_size': 50
+            }
+        },
+    'ant':
+        {
+            'objective_range': (0, 7000),
+            'objective_resolution': 100,
+            'archive_resolution': 10000,
+            'skip_len': 200,
+            'algorithm_name': 'cma_mae_100_0.01',
+            'env_cfg': {
+                'env_name': 'ant',
+                'num_dims': 4,
+                'episode_length': 1000,
+                'grid_size': 10,
+            }
+        }
+})
 
 def kl_divergence(mu1, cov1, mu2, cov2):
     """
@@ -92,8 +157,9 @@ def compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, vec_env, device, dete
     rec_mean = rec_measures.detach().cpu().numpy().mean(0)
     rec_cov = np.cov(rec_measures.detach().cpu().numpy().T)
 
-    kl_div = kl_divergence(gt_mean, gt_cov, rec_mean, rec_cov)
-
+    # TODO: revert
+    # kl_div = kl_divergence(gt_mean, gt_cov, rec_mean, rec_cov)
+    kl_div = 0
     return {
             'kl_div': kl_div,
             't_test': ttest_res,

@@ -33,6 +33,7 @@ def upsample(in_tens, out_HW=(64,64)): # assumes scale factor is same for H and 
     in_H, in_W = in_tens.shape[2], in_tens.shape[3]
     return nn.Upsample(size=out_HW, mode='bilinear', align_corners=False)(in_tens)
 
+
 class LPIPS(nn.Module):
     def __init__(self, behavior_predictor: ModelEncoder, spatial: bool = False):
         '''
@@ -54,7 +55,8 @@ class LPIPS(nn.Module):
                 gt_policy_weights[n1] = 2 * w1 - 1
                 rec_policy_weights[n2] = 2 * w2 - 1
 
-        # TODO: scaling layer
+        # TODO: scaling layer. I think we don't need this b/c the original code scales in order to feed into the
+        # TODO: but we don't do this or need to for the model encoder
 
         gt_preds = self.behavior_predictor(gt_policy_weights, get_intermediate_features=True)
         rec_preds = self.behavior_predictor(rec_policy_weights, get_intermediate_features=True)

@@ -17,7 +17,7 @@ from autoencoders.policy.hypernet import HypernetAutoEncoder, ModelEncoder
 from RL.actor_critic import Actor
 from envs.brax_custom.brax_env import make_vec_env_brax
 from attrdict import AttrDict
-from utils.brax_utils import compare_rec_to_gt_policy
+from utils.brax_utils import compare_rec_to_gt_policy, shared_params
 from utils.utilities import log, config_wandb
 from functools import partial
 from losses.contperceptual import LPIPS
@@ -33,6 +33,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--env_name', choices=['walker2d', 'halfcheetah'])
     parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
     parser.add_argument('--num_epochs', type=int, default=60)
     parser.add_argument('--seed', type=int, default=0)
@@ -142,11 +143,12 @@ def evaluate_agent_quality(env_cfg: dict,
 
 
 def dataset_factory():
-    archive_data_path = 'data'
+    archive_data_path = 'data/walker2d'
     archive_dfs = []
 
     archive_df_paths = glob.glob(archive_data_path + '/archive*100x100*.pkl')
     for path in archive_df_paths:
+        log.debug(f'loading {path=}')
         with open(path, 'rb') as f:
             archive_df = pickle.load(f)
             archive_dfs.append(archive_df)
@@ -168,8 +170,8 @@ def dataset_factory():
     return DataLoader(elite_dataset, batch_size=32, shuffle=True)
 
 
-def shaped_elites_dataset_factory(merge_obsnorm = True, batch_size=32, is_eval=False, inp_coef=0.25):
-    archive_data_path = 'data'
+def shaped_elites_dataset_factory(env_name, merge_obsnorm = True, batch_size=32, is_eval=False, inp_coef=0.25):
+    archive_data_path = f'data/{env_name}'
     archive_dfs = []
 
     archive_df_paths = glob.glob(archive_data_path + '/archive*100x100_global*.pkl')
@@ -180,9 +182,11 @@ def shaped_elites_dataset_factory(merge_obsnorm = True, batch_size=32, is_eval=F
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+    obs_dim, action_shape = shared_params[env_name]['obs_dim'], np.array([shared_params[env_name]['action_dim']])
+
     s_elite_dataset = ShapedEliteDataset(archive_dfs,
-                                         obs_dim=18,
-                                         action_shape=np.array([6]),
+                                         obs_dim=obs_dim,
+                                         action_shape=action_shape,
                                          device=device,
                                          normalize_obs=merge_obsnorm,
                                          is_eval=is_eval,
@@ -256,6 +260,9 @@ def train_autoencoder():
     torch.manual_seed(args.seed)
     # torch.backends.cudnn.deterministic = args.torch_deterministic
 
+    # get env specific params
+    obs_dim, action_shape = shared_params[args.env_name]['obs_dim'], np.array([shared_params[args.env_name]['action_dim']])
+
     if args.use_wandb:
         writer = SummaryWriter(f"runs/{exp_name}")
         config_wandb(wandb_project=args.wandb_project, \
@@ -267,8 +274,12 @@ def train_autoencoder():
                                         )
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model_checkpoint = None
-    model = HypernetAutoEncoder(emb_channels=args.emb_channels, z_channels=args.z_channels, z_height = args.z_height)
+    model_checkpoint = 'checkpoints/autoencoder_walker2d.pt'
+    model = HypernetAutoEncoder(emb_channels=args.emb_channels,
+                                z_channels=args.z_channels,
+                                obs_shape=obs_dim,
+                                action_shape=action_shape,
+                                z_height=args.z_height)
     if model_checkpoint is not None:
         print(f'Loading model from checkpoint')
         model.load_state_dict(torch.load(model_checkpoint))
@@ -300,15 +311,15 @@ def train_autoencoder():
     model_checkpoint_folder.mkdir(exist_ok=True)
 
     train_batch_size, test_batch_size = 32, 8
-    dataloader = shaped_elites_dataset_factory(args.merge_obsnorm, batch_size=train_batch_size, \
+    dataloader = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=train_batch_size, \
                                                is_eval=False, inp_coef=args.inp_coef)
-    test_dataloader = shaped_elites_dataset_factory(args.merge_obsnorm, batch_size=test_batch_size, \
+    test_dataloader = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=test_batch_size, \
                                                 is_eval=True,  inp_coef=args.inp_coef)
     inp_coef = dataloader.dataset.inp_coef
 
     if args.track_agent_quality:
         env_cfg = AttrDict({
-            'env_name': 'halfcheetah',
+            'env_name': args.env_name,
             'env_batch_size': 100,
             'num_dims': 2,
             'envs_per_model': 1,
