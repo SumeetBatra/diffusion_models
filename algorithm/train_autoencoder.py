@@ -274,7 +274,7 @@ def train_autoencoder():
                                         )
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model_checkpoint = 'checkpoints/autoencoder_walker2d.pt'
+    model_checkpoint = None
     model = HypernetAutoEncoder(emb_channels=args.emb_channels,
                                 z_channels=args.z_channels,
                                 obs_shape=obs_dim,
@@ -293,7 +293,7 @@ def train_autoencoder():
                                           z_channels=args.z_channels,
                                           z_height=args.z_height,
                                           regress_to_measure=True)
-        regressor_path = glob.glob('checkpoints/*regressor*')[0]
+        regressor_path = f'checkpoints/regressor_{args.env_name}.pt'
         encoder_pretrained.load_state_dict(torch.load(regressor_path))
         encoder_pretrained.to(device)
         # freeze the encoder

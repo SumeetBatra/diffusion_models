@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from utils.utilities import log, config_wandb
 from algorithm.train_autoencoder import shaped_elites_dataset_factory
 from autoencoders.policy.hypernet import ModelEncoder
+from utils.brax_utils import shared_params
 
 
 import wandb
@@ -22,6 +23,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--env_name', type=str, choices=['halfcheetah', 'walker2d'])
     parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
     parser.add_argument('--num_epochs', type=int, default=200)
     parser.add_argument('--seed', type=int, default=0)
@@ -62,6 +64,9 @@ def train_regressor():
     torch.manual_seed(args.seed)
     # torch.backends.cudnn.deterministic = args.torch_deterministic
 
+    # env related params
+    obs_shape, action_shape = shared_params[args.env_name]['obs_dim'], np.array([shared_params[args.env_name]['action_dim']])
+
     if args.use_wandb:
         writer = SummaryWriter(f"runs/{exp_name}")
         config_wandb(wandb_project=args.wandb_project, \
@@ -74,7 +79,6 @@ def train_regressor():
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model_checkpoint = None
-    obs_shape, action_shape = 18, np.array([6])
     model = ModelEncoder(obs_shape=obs_shape,
                          action_shape=action_shape,
                          emb_channels=args.emb_channels,
@@ -92,8 +96,11 @@ def train_regressor():
     model_checkpoint_folder.mkdir(exist_ok=True)
 
     train_batch_size = 32
-    dataloader = shaped_elites_dataset_factory(args.merge_obsnorm, batch_size=train_batch_size,
-                                               is_eval=False, inp_coef=args.inp_coef)
+    dataloader = shaped_elites_dataset_factory(args.env_name,
+                                               args.merge_obsnorm,
+                                               batch_size=train_batch_size,
+                                               is_eval=False,
+                                               inp_coef=args.inp_coef)
 
     epochs = args.num_epochs
     global_step = 0

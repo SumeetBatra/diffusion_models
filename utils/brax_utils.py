@@ -157,9 +157,8 @@ def compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, vec_env, device, dete
     rec_mean = rec_measures.detach().cpu().numpy().mean(0)
     rec_cov = np.cov(rec_measures.detach().cpu().numpy().T)
 
-    # TODO: revert
-    # kl_div = kl_divergence(gt_mean, gt_cov, rec_mean, rec_cov)
-    kl_div = 0
+
+    kl_div = kl_divergence(gt_mean, gt_cov, rec_mean, rec_cov)
     return {
             'kl_div': kl_div,
             't_test': ttest_res,
