@@ -37,7 +37,7 @@ def parse_args():
     parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
     parser.add_argument('--num_epochs', type=int, default=60)
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--emb_channels', type=int, default=512)
+    parser.add_argument('--emb_channels', type=int, default=4)
     parser.add_argument('--z_channels', type=int, default=4)
     parser.add_argument('--z_height', type=int, default=4)
     parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
