@@ -441,7 +441,11 @@ def train_autoencoder():
             
 
     print('Saving final model checkpoint...')
-    torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), f'{exp_name}_autoencoder.pt'))
+    if args.conditional:
+        model_name = f'{exp_name}_conditional_autoencoder'
+    else:
+        model_name = f'{exp_name}_autoencoder.pt'
+    torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), model_name))
 
 
 if __name__ == '__main__':
