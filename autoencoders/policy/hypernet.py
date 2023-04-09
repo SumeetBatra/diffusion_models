@@ -15,18 +15,22 @@ class HypernetAutoEncoder(AutoEncoderBase):
                  obs_shape: int,
                  action_shape: np.ndarray,
                  normalize_obs: bool = False,
-                 z_height: int = 4):
+                 z_height: int = 4,
+                 conditional: bool = False,
+                 ):
         """
         :param emb_channels: is the number of dimensions in the quantized embedding space
         :param z_channels: is the number of channels in the embedding space
         """
-        AutoEncoderBase.__init__(self, emb_channels, z_channels)
+        AutoEncoderBase.__init__(self, emb_channels, z_channels, conditional)
 
         self.encoder = ModelEncoder(obs_shape=obs_shape,
                                     action_shape=action_shape,
                                     emb_channels=emb_channels,
                                     z_channels=z_channels,
-                                    z_height=z_height)
+                                    z_height=z_height,
+                                    conditional=conditional,
+                                    )
 
         # config dict for the hypernet decoder
         action_dim, obs_dim = 6, 18
@@ -41,6 +45,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
         config['z_channels'] = z_channels
         config['z_height'] = z_height
         config['norm_variables'] = False
+        config['conditional'] = False
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.decoder = MLP_GHN(**config, debug_level=0, device=device)
 
@@ -54,7 +59,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
 
         self.dummy_actor = make_actor
 
-    def decode(self, z: torch.Tensor):
+    def decode(self, z: torch.Tensor, y: torch.Tensor = None):
         """
         ### Decode policies from latent representation
         :param z: is the latent representation with shape `[batch_size, emb_channels, z_height, z_height]`
@@ -62,15 +67,16 @@ class HypernetAutoEncoder(AutoEncoderBase):
         # Map to embedding space from the quantized representation
         z = self.post_quant_conv(z)
         # Decode the image of shape `[batch_size, channels, height, width]`
-        return self.decoder([self.dummy_actor() for _ in range(z.shape[0])], z)
+        return self.decoder([self.dummy_actor() for _ in range(z.shape[0])], z, y)
 
 
 class ModelEncoder(nn.Module):
     def __init__(self, obs_shape, action_shape, emb_channels, z_channels, obs_norm=False, z_height=4,
-                 regress_to_measure=False, measure_dim=2):
+                 regress_to_measure=False, measure_dim=2, conditional=False):
         super().__init__()
 
         self.obs_norm = obs_norm
+        self.conditional = conditional
         dummy_actor = Actor(obs_shape=obs_shape, action_shape=action_shape, normalize_obs=self.obs_norm,
                             normalize_returns=True)
 
@@ -85,6 +91,7 @@ class ModelEncoder(nn.Module):
         self.emb_channels = emb_channels
         self.z_height = z_height
         self.regress_to_measure = regress_to_measure
+        assert not (self.regress_to_measure and self.conditional), "Cannot regress to measure and be conditional on measure at the same time"
         self.measure_dim = measure_dim
 
         self.cnns = {}
@@ -120,6 +127,9 @@ class ModelEncoder(nn.Module):
             total_op_shape += np.prod(op_shape)
 
         self.cnns = nn.ModuleDict(self.cnns)
+
+        if self.conditional:
+            total_op_shape += 2
 
         self.out = nn.Linear(total_op_shape, 2 * self.z_channels * self.z_height * self.z_height)
         if self.regress_to_measure:
@@ -185,7 +195,7 @@ class ModelEncoder(nn.Module):
         fc.add_module('relu3', nn.ReLU(inplace=True))
         return fc, (1, 1, 256, 1)
 
-    def forward(self, x, get_intermediate_features=False):
+    def forward(self, x, y = None, get_intermediate_features=False):
         outs = []
         features = []
         for k in range(len(self.list_of_weight_names)):
@@ -219,6 +229,8 @@ class ModelEncoder(nn.Module):
             outs.append(out)
 
         x = torch.cat(outs, dim=1)
+        if self.conditional:
+            x = torch.cat([x, y], dim=1)
         x = self.out(x)
         if get_intermediate_features:
             features.append(x[:, :, None, None])

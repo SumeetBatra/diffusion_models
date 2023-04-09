@@ -32,10 +32,11 @@ class GaussianDistribution:
 
 
 class AutoEncoderBase(nn.Module):
-    def __init__(self, emb_channels: int, z_channels: int):
+    def __init__(self, emb_channels: int, z_channels: int, conditional: bool = False):
         super().__init__()
         self.encoder: nn.Module = None
         self.decoder: nn.Module = None
+        self.conditional = conditional
 
         # Convolution to map from embedding space to
         # quantized embedding space moments (mean and log variance)
@@ -44,19 +45,19 @@ class AutoEncoderBase(nn.Module):
         # embedding space
         self.post_quant_conv = nn.Conv2d(emb_channels, z_channels, 1)
 
-    def encode(self, x: torch.Tensor):
+    def encode(self, x: torch.Tensor, y: torch.Tensor = None):
         assert self.encoder is not None, "Need to define a valid encoder (nn.Module)"
-        z = self.encoder(x)
+        z = self.encoder(x,y)
         moments = self.quant_conv(z)
         return GaussianDistribution(moments)
 
-    def decode(self, z: torch.Tensor):
+    def decode(self, z: torch.Tensor, y: torch.Tensor = None):
         assert self.decoder is not None, "Need to define a valid decoder (nn.Module)"
         z = self.post_quant_conv(z)
-        return self.decoder(z)
+        return self.decoder(z, y)
 
-    def forward(self, x: torch.Tensor):
-        posterior = self.encode(x)
+    def forward(self, x: torch.Tensor, y: torch.Tensor = None):
+        posterior = self.encode(x, y)
         z = posterior.sample()
-        out = self.decode(z)
+        out = self.decode(z, y)
         return out, posterior
