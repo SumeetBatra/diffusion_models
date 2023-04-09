@@ -76,6 +76,8 @@ def evaluate_agent_quality(env_cfg: dict,
     avg_t_test = 0
     avg_orig_reward = 0
     avg_reconstructed_reward = 0
+    avg_std_orig_measure = 0
+    avg_std_rec_measure = 0
     avg_kl_div = 0
 
     obs_dim = vec_env.single_observation_space.shape[0]
@@ -116,12 +118,16 @@ def evaluate_agent_quality(env_cfg: dict,
         avg_orig_reward += info['Rewards/original']
         avg_reconstructed_reward += info['Rewards/reconstructed']
         avg_kl_div += info['kl_div']
+        avg_std_orig_measure += info['Measures/original_std']
+        avg_std_rec_measure += info['Measures/reconstructed_std']
 
     avg_measure_mse /= test_batch_size
     avg_t_test /= test_batch_size
     avg_orig_reward /= test_batch_size
     avg_reconstructed_reward /= test_batch_size
     avg_kl_div /= test_batch_size
+    avg_std_orig_measure /= test_batch_size
+    avg_std_rec_measure /= test_batch_size
 
     reward_ratio = avg_reconstructed_reward / avg_orig_reward
 
@@ -137,7 +143,11 @@ def evaluate_agent_quality(env_cfg: dict,
                     'Behavior/reward_ratio': reward_ratio,
                     'Behavior/p-value_0': avg_t_test[0],
                     'Behavior/p-value_1': avg_t_test[1],
-                    'Behavior/kl_div': avg_kl_div
+                    'Behavior/kl_div': avg_kl_div,
+                    'Behavior/std_orig_measure_0': avg_std_orig_measure[0],
+                    'Behavior/std_orig_measure_1': avg_std_orig_measure[1],
+                    'Behavior/std_rec_measure_0': avg_std_rec_measure[0],
+                    'Behavior/std_rec_measure_1': avg_std_rec_measure[1],
                 }
     return final_info
 

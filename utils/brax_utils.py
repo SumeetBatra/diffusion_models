@@ -163,10 +163,14 @@ def compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, vec_env, device, dete
             'kl_div': kl_div,
             't_test': ttest_res,
             'measure_mse': torch.square(gt_measures.mean(0) - rec_measures.mean(0)).detach().cpu().numpy(),
+            
             'Rewards/original': gt_rewards.mean().item(),
-            'Measures/original': gt_measures.mean(dim=0).detach().cpu().numpy(),
+            'Measures/original_mean': gt_measures.mean(dim=0).detach().cpu().numpy(),
+            'Measures/original_std': gt_measures.std(dim=0).detach().cpu().numpy(),
+            
             'Rewards/reconstructed': rec_rewards.mean().item(),
-            'Measures/reconstructed': rec_measures.mean(dim=0).detach().cpu().numpy(),
+            'Measures/reconstructed_mean': rec_measures.mean(dim=0).detach().cpu().numpy(),
+            'Measures/reconstructed_std': rec_measures.std(dim=0).detach().cpu().numpy(),
             }
 
 
