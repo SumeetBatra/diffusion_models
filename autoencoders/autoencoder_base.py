@@ -32,11 +32,14 @@ class GaussianDistribution:
 
 
 class AutoEncoderBase(nn.Module):
-    def __init__(self, emb_channels: int, z_channels: int, conditional: bool = False):
+    def __init__(self, emb_channels: int, z_channels: int, z_height: int, conditional: bool = False):
         super().__init__()
         self.encoder: nn.Module = None
         self.decoder: nn.Module = None
         self.conditional = conditional
+        self.emb_channels = emb_channels
+        self.z_channels = z_channels
+        self.z_height = z_height
 
         # Convolution to map from embedding space to
         # quantized embedding space moments (mean and log variance)
@@ -56,8 +59,18 @@ class AutoEncoderBase(nn.Module):
         z = self.post_quant_conv(z)
         return self.decoder(z, y)
 
+    def random_sample(self, x: torch.Tensor, y: torch.Tensor = None):
+            bs = y.shape[0]
+            moments_mean = torch.zeros((bs, self.emb_channels, self.z_height, self.z_height))
+            moments_logvar = torch.zeros((bs, self.emb_channels, self.z_height, self.z_height))
+            moments = torch.cat((moments_mean, moments_logvar), dim=1).to(y.device)
+            return GaussianDistribution(moments)
+
     def forward(self, x: torch.Tensor, y: torch.Tensor = None):
-        posterior = self.encode(x, y)
+        if x is None:
+            posterior = self.random_sample(x, y)
+        else:
+            posterior = self.encode(x, y)
         z = posterior.sample()
         out = self.decode(z, y)
         return out, posterior

@@ -51,6 +51,7 @@ def parse_args():
     parser.add_argument('--inp_coef', type=float, default=1)
     parser.add_argument('--kl_coef', type=float, default=1e-6)
     parser.add_argument('--perceptual_loss_coef', type=float, default=0)
+    parser.add_argument('--conditional', type=lambda x: bool(strtobool(x)), default=False)
 
     args = parser.parse_args()
     return args
@@ -289,7 +290,9 @@ def train_autoencoder():
                                 z_channels=args.z_channels,
                                 obs_shape=obs_dim,
                                 action_shape=action_shape,
-                                z_height=args.z_height)
+                                z_height=args.z_height,
+                                conditional=args.conditional,
+                                )
     if model_checkpoint is not None:
         print(f'Loading model from checkpoint')
         model.load_state_dict(torch.load(model_checkpoint))
@@ -343,14 +346,28 @@ def train_autoencoder():
     global_step = 0
     for epoch in range(epochs):
 
-        if args.track_agent_quality and epoch % 5 == 0:
+        if args.track_agent_quality and epoch % 10 == 0:
             # get a ground truth policy and evaluate it. Then get the reconstructed policy and compare its
             # performance and behavior to the ground truth
             gt_params, gt_measure, obsnorms = next(iter(test_dataloader))
-            rec_policies, _ = model(gt_params)
+            gt_measure = gt_measure.to(device).to(torch.float32)
+
+            if args.conditional:
+                rec_policies, _ = model(gt_params, gt_measure)
+            else:
+                rec_policies, _ = model(gt_params)
 
             info = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, inp_coef, device, normalize_obs=not args.merge_obsnorm)
 
+            
+            # now try to sample a policy with just measures
+            if args.conditional:
+                rec_policies, _ = model(None, gt_measure)
+
+                info2 = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, inp_coef, device, normalize_obs=not args.merge_obsnorm) 
+
+                for key, val in info2.items():
+                    info['Conditional_' + key] = val
             # log items to tensorboard and wandb
             if args.use_wandb:
                 for key, val in info.items():
@@ -371,9 +388,12 @@ def train_autoencoder():
             optimizer.zero_grad()
 
             # policies = policies.to(device)
-            # measures = measures.to(device)
+            measures = measures.to(device).to(torch.float32)
 
-            rec_policies, posterior = model(policies)
+            if args.conditional:
+                rec_policies, posterior = model(policies, measures)
+            else:
+                rec_policies, posterior = model(policies)
 
             policy_mse_loss, loss_info = mse_loss_func(policies, rec_policies)
             kl_loss = posterior.kl().mean()

@@ -22,7 +22,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
         :param emb_channels: is the number of dimensions in the quantized embedding space
         :param z_channels: is the number of channels in the embedding space
         """
-        AutoEncoderBase.__init__(self, emb_channels, z_channels, conditional)
+        AutoEncoderBase.__init__(self, emb_channels, z_channels, z_height, conditional)
 
         self.encoder = ModelEncoder(obs_shape=obs_shape,
                                     action_shape=action_shape,
@@ -45,7 +45,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
         config['z_channels'] = z_channels
         config['z_height'] = z_height
         config['norm_variables'] = False
-        config['conditional'] = False
+        config['conditional'] = conditional
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.decoder = MLP_GHN(**config, debug_level=0, device=device)
 
