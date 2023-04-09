@@ -18,12 +18,14 @@ from torch.utils.data import DataLoader
 from models.unet import num_to_groups, Unet
 from models.cond_unet import ConditionalUNet
 from autoencoders.policy.hypernet import HypernetAutoEncoder as AutoEncoder
-from train_autoencoder import evaluate_agent_quality
+from algorithm.train_autoencoder import evaluate_agent_quality, shaped_elites_dataset_factory
 from dataset.shaped_elites_dataset import ShapedEliteDataset
 from diffusion.gaussian_diffusion import GaussianDiffusion, cosine_beta_schedule, linear_beta_schedule
 from diffusion.latent_diffusion import LatentDiffusion
 from diffusion.ddim import DDIMSampler
 from envs.brax_custom.brax_env import make_vec_env_brax
+from utils.brax_utils import compare_rec_to_gt_policy, shared_params
+
 from utils.utilities import log
 
 
@@ -44,39 +46,17 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--inp_coef', type=float, default=1.0)
     # VAE / LDM hyperparams
-    parser.add_argument('--emb_channels', type=int, default=512)
+    parser.add_argument('--emb_channels', type=int, default=4)
     parser.add_argument('--z_channels', type=int, default=4)
     parser.add_argument('--z_height', type=int, default=4)
     parser.add_argument('--autoencoder_cp_path', type=str)
+    # Task specific args
+    parser.add_argument('--env_name', choices=['walker2d', 'halfcheetah'])
 
     args = parser.parse_args()
     cfg = AttrDict(vars(args))
     return cfg
 
-
-def shaped_elites_dataset_factory(merge_obsnorm = True, batch_size=32, is_eval=False, inp_coef=0.25):
-    archive_data_path = 'data'
-    archive_dfs = []
-
-    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100_global*.pkl')
-    for path in archive_df_paths:
-        with open(path, 'rb') as f:
-            archive_df = pickle.load(f)
-            archive_dfs.append(archive_df)
-
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-    s_elite_dataset = ShapedEliteDataset(archive_dfs,
-                                         obs_dim=18,
-                                         action_shape=np.array([6]),
-                                         device=device,
-                                         normalize_obs=False,
-                                         is_eval=is_eval,
-                                         inp_coef=inp_coef,
-                                         eval_batch_size=batch_size if is_eval else None,
-                                         )
-
-    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval)
 
 
 def grad_norm(model):
@@ -102,6 +82,10 @@ def train(cfg):
     model_checkpoint = None
 
     exp_name = 'diffusion_model_' + datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    # get env specific params
+    obs_dim, action_shape = shared_params[cfg.env_name]['obs_dim'], np.array([shared_params[cfg.env_name]['action_dim']])
+
 
     if cfg.use_wandb:
         writer = SummaryWriter(f"runs/{exp_name}")
@@ -140,7 +124,11 @@ def train(cfg):
             d_cond=256,
             logvar=logvar
         )
-        autoencoder = AutoEncoder(emb_channels=cfg.emb_channels, z_channels=cfg.z_channels, z_height=cfg.z_height)
+        autoencoder = AutoEncoder(emb_channels=cfg.emb_channels, 
+                                  z_channels=cfg.z_channels, 
+                                  obs_shape=obs_dim,
+                                  action_shape=action_shape,                                  
+                                  z_height=cfg.z_height)
         autoencoder.load_state_dict(torch.load(str(autoencoder_checkpoint_path)))
         autoencoder.to(device)
         autoencoder.eval()
@@ -163,9 +151,11 @@ def train(cfg):
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
     train_batch_size, test_batch_size = 32, 8
-    train_dataloader = shaped_elites_dataset_factory(batch_size=train_batch_size, is_eval=False, inp_coef=cfg.inp_coef)
-    test_dataloader = shaped_elites_dataset_factory(batch_size=test_batch_size, is_eval=True, inp_coef=cfg.inp_coef)
-    inp_coef = cfg.inp_coef
+    train_dataloader = shaped_elites_dataset_factory(cfg.env_name, cfg.merge_obsnorm, batch_size=train_batch_size, \
+                                               is_eval=False, inp_coef=cfg.inp_coef)
+    test_dataloader = shaped_elites_dataset_factory(cfg.env_name, cfg.merge_obsnorm, batch_size=test_batch_size, \
+                                                is_eval=True,  inp_coef=cfg.inp_coef)
+    inp_coef = train_dataloader.dataset.inp_coef
 
     if cfg.track_agent_quality:
         env_cfg = AttrDict({
