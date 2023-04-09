@@ -43,8 +43,9 @@ class ShapedEliteDataset(Dataset):
         elites_list = archive_df.filter(regex='solution*').to_numpy()
 
         if self.is_eval:
-            # indices shall be eval_batch_size number of indices spaced out evenly across the elites_list
+            # indices shall be eval_batch_size number of indices spaced out (by objective) evenly across the elites_list
             indices = np.linspace(0, len(elites_list) - 1, eval_batch_size, dtype=int)
+            indices = np.argsort(archive_df['objective'].to_numpy())[indices]
             elites_list = elites_list[indices]
             self.measures_list = self.measures_list[indices]
             self.metadata = self.metadata[indices]
