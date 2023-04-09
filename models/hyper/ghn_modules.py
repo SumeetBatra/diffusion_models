@@ -124,7 +124,7 @@ class MLP_GHN(nn.Module):
                               num_classes=num_classes)
 
         max_ch = max(max_shape[:2])
-        self.decoder_1d = MLP(hid, hid=(hid * 2, 2 * max_ch),
+        self.decoder_1d = MLP(hid, hid=(hid * 2, max_ch),
                               last_activation=None)
         self.bias_class = nn.Sequential(nn.ReLU(),
                                         nn.Linear(max_ch, num_classes))
@@ -168,9 +168,6 @@ class MLP_GHN(nn.Module):
                            In case of evaluation, only one network can be passed.
         """
 
-        predict_class_layers = True
-        bn_train = True
-
         if self.norm_variables:
             norm_variables = self.norm_mlp(z.reshape(-1, self.z_vec_size))
             norm_mean = self.norm_mean(norm_variables)
@@ -180,11 +177,7 @@ class MLP_GHN(nn.Module):
                 net.obs_normalizer.obs_rms.var = norm_var[k]
 
         param_groups, params_map = self._map_net_params(nets_torch, self.debug_level > 0)
-        # param_groups1, params_map1 = self._map_net_params(nets_torch[0], self.debug_level > 0)
-        # param_groups2, params_map2 = self._map_net_params(nets_torch[1], self.debug_level > 0)
 
-        # x_before_gnn = self.shape_enc(params_map, predict_class_layers=predict_class_layers)
-        # x_before_gnn = self.shape_enc2(shape_ind)
         shape_ind = self.model_shape_indicators.repeat(len(nets_torch), 1)
         enc_z = self.z_encoder(z.reshape(-1, self.z_vec_size))
         shape_ind = shape_ind + enc_z.view(-1, 1)
@@ -206,9 +199,6 @@ class MLP_GHN(nn.Module):
         all_graph_edges = torch.cat(all_graph_edges, dim=0)
         all_node_feat = torch.cat(all_node_feat, dim=0)
 
-        # graph_edges = self.default_edges[0:len(list((nets_torch if isinstance(nets_torch, list) else [nets_torch])[0].named_parameters()))]
-        # node_feat = self.default_node_feat[0:graph_edges.shape[0] + 1]
-
         # Update node embeddings using a GatedGNN, MLP or another model
         x = self.gnn(x_before_gnn, all_graph_edges, all_node_feat)
 
@@ -223,11 +213,9 @@ class MLP_GHN(nn.Module):
             x_ = x[torch.tensor(inds, device=x.device)]
             if key == 'cls_w':
                 w[key] = self.decoder(x_, (1, 1), class_pred=False)
-            elif key.startswith('4d'):
-                sz = tuple(map(int, key.split('-')[1:]))
-                w[key] = self.decoder(x_, sz, class_pred=False)
+
             else:
-                w[key] = self.decoder_1d(x_).view(len(inds), 2, -1)  # .clone()
+                w[key] = self.decoder_1d(x_)
                 if key == 'cls_b':
                     w[key] = self.bias_class(w[key])
 
@@ -238,36 +226,12 @@ class MLP_GHN(nn.Module):
             if w_ind is None:
                 continue  # e.g. pooling
 
-            if not predict_class_layers and key in ['cls_w', 'cls_b']:
-                continue  # do not set the classification parameters when fine-tuning
-
             m, sz, is_w = matched['module'], matched['sz'], matched['is_w']
-            for it in range(2 if (len(sz) == 1 and is_w) else 1):
-
-                if len(sz) == 1:
-                    # separately set for BN/LN biases as they are
-                    # not represented as separate nodes in graphs
-                    w_ = w[key][w_ind][1 - is_w + it]
-                    if it == 1:
-                        assert (type(m) in NormLayers and key == '1d'), \
-                            (type(m), key)
-                else:
-                    w_ = w[key][w_ind]
-
-                sz_set = self._set_params(m, self._tile_params(w_, sz), is_w=is_w & ~it)
-                n_tensors += 1
-                n_params += torch.prod(torch.tensor(sz_set))
-
-        if not self.training and bn_train:
-
-            def bn_set_train(module):
-                if isinstance(module, nn.BatchNorm2d):
-                    module.track_running_stats = False
-                    module.training = True
-
-            for net in nets_torch:
-                net.apply(bn_set_train)
-            # nets_torch.apply(bn_set_train)  # set BN layers to the training mode to enable evaluation without having running statistics
+            w_ = w[key][w_ind]
+            
+            sz_set = self._set_params(m, self._tile_params(w_, sz), is_w=is_w)
+            n_tensors += 1
+            n_params += torch.prod(torch.tensor(sz_set))
 
         return nets_torch
 

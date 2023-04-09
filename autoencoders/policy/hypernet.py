@@ -31,7 +31,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
         # config dict for the hypernet decoder
         action_dim, obs_dim = 6, 18
         config = {}
-        config['max_shape'] = (256, 256, 1, 1)
+        config['max_shape'] = (128, 128, 1, 1)
         config['num_classes'] = 2 * action_dim
         config['num_observations'] = obs_dim
         config['weight_norm'] = False
