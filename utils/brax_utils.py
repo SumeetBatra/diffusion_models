@@ -72,6 +72,7 @@ shared_params = OrderedDict({
         }
 })
 
+
 def kl_divergence(mu1, cov1, mu2, cov2):
     """
     Calculates the KL divergence between two Gaussian distributions.
@@ -92,6 +93,18 @@ def kl_divergence(mu1, cov1, mu2, cov2):
                     len(mu1) + np.log(np.linalg.det(cov2) / np.linalg.det(cov1)))
 
     return kl_div
+
+
+def js_divergence(mu1, cov1, mu2, cov2):
+    '''Jensen-Shannon symmetric divergence metric. It is assumed that all variables
+    mu1/2 and cov1/2 parametrize two normal distributions, otherwise this calculation is incorrect'''
+
+    # sum of gaussians is gaussian
+    mu_m, cov_m = 0.5 * (mu1 + mu2), 0.5 * (cov1 + cov2)
+
+    res = 0.5 * (kl_divergence(mu1, cov1, mu_m, cov_m) + kl_divergence(mu2, cov2, mu_m, cov_m))
+    return res
+
 
 def rollout_agent(agent: Actor, env_cfg, vec_env, device, deterministic=True):
     if agent.obs_normalizer is not None:
@@ -157,10 +170,9 @@ def compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, vec_env, device, dete
     rec_mean = rec_measures.detach().cpu().numpy().mean(0)
     rec_cov = np.cov(rec_measures.detach().cpu().numpy().T)
 
-
-    kl_div = kl_divergence(gt_mean, gt_cov, rec_mean, rec_cov)
+    js_div = js_divergence(gt_mean, gt_cov, rec_mean, rec_cov)
     return {
-            'kl_div': kl_div,
+            'js_div': js_div,
             't_test': ttest_res,
             'measure_mse': torch.square(gt_measures.mean(0) - rec_measures.mean(0)).detach().cpu().numpy(),
             
