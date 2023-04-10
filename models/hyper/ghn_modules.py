@@ -99,19 +99,21 @@ class MLP_GHN(nn.Module):
         self.model_shape_indicators.append(torch.tensor(self.num_classes // 2).type(torch.FloatTensor).to(device))
         self.model_shape_indicators = torch.stack(self.model_shape_indicators).view(-1, 1)
 
-        if layernorm:
-            self.ln = nn.LayerNorm(hid)
 
         self.embed = torch.nn.Embedding(3, hid)
 
         self.z_vec_size = self.z_channels * self.z_height * self.z_height
-        self.z_encoder = nn.Linear(self.z_vec_size, len(self.model_shape_indicators)).to(device)
+        self.z_encoder = nn.Linear(self.z_vec_size, hid).to(device)
+        self.shape_enc3 = nn.Linear(1, hid).to(device)
+
+        hid = hid * 2
         
         if self.conditional:
             self.y_encoder = nn.Linear(2, len(self.model_shape_indicators)).to(device)
-            self.shape_enc3 = nn.Linear(3, hid).to(device)
-        else:
-            self.shape_enc3 = nn.Linear(2, hid).to(device)
+            hid = int(hid * 1.5)
+
+        if layernorm:
+            self.ln = nn.LayerNorm(hid)
 
         if hypernet == 'gatedgnn':
             self.gnn = GatedGNN(in_features=hid, ve=False)
@@ -186,15 +188,13 @@ class MLP_GHN(nn.Module):
 
         param_groups, params_map = self._map_net_params(nets_torch, self.debug_level > 0)
 
-        shape_ind = self.model_shape_indicators.repeat(len(nets_torch), 1)
-        enc_z = self.z_encoder(z.reshape(-1, self.z_vec_size)).view(-1, 1)
-        encs = [shape_ind, enc_z]
+        x_before_gnn = self.shape_enc3(self.model_shape_indicators).repeat(len(nets_torch), 1)
+        enc_z = self.z_encoder(z.reshape(-1, self.z_vec_size)).repeat_interleave(len(self.model_shape_indicators),0)
         if self.conditional:
-            enc_y = self.y_encoder(y).view(-1, 1)
-            encs.append(enc_y)
-        # shape_ind = shape_ind + enc_z
-        shape_ind = torch.cat(encs, dim=1)
-        x_before_gnn = self.shape_enc3(shape_ind)
+            enc_y = self.y_encoder(y).repeat_interleave(len(self.model_shape_indicators),0)
+            x_before_gnn = torch.cat([x_before_gnn, enc_z, enc_y], dim=1)
+        else:
+            x_before_gnn = torch.cat([x_before_gnn, enc_z], dim=1)
 
         all_graph_edges = []
         all_node_feat = []
