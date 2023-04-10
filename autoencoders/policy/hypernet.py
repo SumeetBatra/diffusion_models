@@ -41,7 +41,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
         config['weight_norm'] = False
         config['ve'] = 1 > 1
         config['layernorm'] = True
-        config['hid'] = 16
+        config['hid'] = 64
         config['z_channels'] = z_channels
         config['z_height'] = z_height
         config['norm_variables'] = False
