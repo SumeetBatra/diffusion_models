@@ -406,13 +406,14 @@ def train_autoencoder():
             kl_loss = posterior.kl().mean()
             loss = policy_mse_loss + args.kl_coef * kl_loss
 
-            if args.perceptual_loss_coef > 0:
-                rec_weights_dict = agent_to_weights_dict(rec_policies)
-                rec_weights_dict['actor_logstd'] = policies['actor_logstd']
-                perceptual_loss = percept_loss(policies, rec_weights_dict).mean()
+            # TODO: Uncommenting so that we can track the perceptual loss even when coef is 0
+            # if args.perceptual_loss_coef > 0:
+            rec_weights_dict = agent_to_weights_dict(rec_policies)
+            rec_weights_dict['actor_logstd'] = policies['actor_logstd']
+            perceptual_loss = percept_loss(policies, rec_weights_dict).mean()
 
-                epoch_perceptual_loss += perceptual_loss.item()
-                loss += args.perceptual_loss_coef * perceptual_loss
+            epoch_perceptual_loss += perceptual_loss.item()
+            loss += args.perceptual_loss_coef * perceptual_loss
 
             loss.backward()
             # if step % 100 == 0:
