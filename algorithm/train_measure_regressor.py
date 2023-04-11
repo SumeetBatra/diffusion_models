@@ -53,10 +53,11 @@ def grad_norm(model):
 
 
 def train_regressor():
-    # experiment name
-    exp_name = 'regressor_' + datetime.now().strftime("%Y%m%d-%H%M%S")
 
     args = parse_args()
+
+    # experiment name
+    exp_name = args.env_name + '_regressor_' + datetime.now().strftime("%Y%m%d-%H%M%S")
 
     # set seed
     random.seed(args.seed)
@@ -134,7 +135,7 @@ def train_regressor():
             
 
     print('Saving final model checkpoint...')
-    torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), f'{exp_name}_regressor.pt'))
+    torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), f'{exp_name}.pt'))
 
 
 if __name__ == '__main__':

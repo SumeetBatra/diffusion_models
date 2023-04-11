@@ -79,7 +79,7 @@ def evaluate_agent_quality(env_cfg: dict,
     avg_reconstructed_reward = 0
     avg_std_orig_measure = 0
     avg_std_rec_measure = 0
-    avg_kl_div = 0
+    avg_js_div = 0
 
     obs_dim = vec_env.single_observation_space.shape[0]
     action_shape = vec_env.single_action_space.shape
@@ -118,7 +118,7 @@ def evaluate_agent_quality(env_cfg: dict,
         avg_t_test += info['t_test'].pvalue
         avg_orig_reward += info['Rewards/original']
         avg_reconstructed_reward += info['Rewards/reconstructed']
-        avg_kl_div += info['kl_div']
+        avg_js_div += info['js_div']
         avg_std_orig_measure += info['Measures/original_std']
         avg_std_rec_measure += info['Measures/reconstructed_std']
 
@@ -126,7 +126,7 @@ def evaluate_agent_quality(env_cfg: dict,
     avg_t_test /= test_batch_size
     avg_orig_reward /= test_batch_size
     avg_reconstructed_reward /= test_batch_size
-    avg_kl_div /= test_batch_size
+    avg_js_div /= test_batch_size
     avg_std_orig_measure /= test_batch_size
     avg_std_rec_measure /= test_batch_size
 
@@ -134,7 +134,7 @@ def evaluate_agent_quality(env_cfg: dict,
 
     log.debug(f'Measure MSE: {avg_measure_mse}')
     log.debug(f'Reward ratio: {reward_ratio}')
-    log.debug(f'kl_div: {avg_kl_div}')
+    log.debug(f'js_div: {avg_js_div}')
 
     final_info = {
                     'Behavior/measure_mse_0': avg_measure_mse[0],
@@ -144,7 +144,7 @@ def evaluate_agent_quality(env_cfg: dict,
                     'Behavior/reward_ratio': reward_ratio,
                     'Behavior/p-value_0': avg_t_test[0],
                     'Behavior/p-value_1': avg_t_test[1],
-                    'Behavior/kl_div': avg_kl_div,
+                    'Behavior/js_div': avg_js_div,
                     'Behavior/std_orig_measure_0': avg_std_orig_measure[0],
                     'Behavior/std_orig_measure_1': avg_std_orig_measure[1],
                     'Behavior/std_rec_measure_0': avg_std_rec_measure[0],
@@ -185,7 +185,7 @@ def shaped_elites_dataset_factory(env_name, merge_obsnorm = True, batch_size=32,
     archive_data_path = f'data/{env_name}'
     archive_dfs = []
 
-    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100_global*.pkl')
+    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100*.pkl')
     for path in archive_df_paths:
         with open(path, 'rb') as f:
             archive_df = pickle.load(f)
@@ -260,10 +260,12 @@ def agent_to_weights_dict(agents: list[Actor]):
 
 
 def train_autoencoder():
-    # experiment name
-    exp_name = 'autoencoder_' + datetime.now().strftime("%Y%m%d-%H%M%S")
-
     args = parse_args()
+
+    # experiment name
+    exp_name = args.env_name + '_autoencoder_' + datetime.now().strftime("%Y%m%d-%H%M%S")
+    if args.conditional:
+        exp_name = 'conditional_' + exp_name
 
     # set seed
     random.seed(args.seed)
@@ -307,6 +309,7 @@ def train_autoencoder():
                                           z_height=args.z_height,
                                           regress_to_measure=True)
         regressor_path = f'checkpoints/regressor_{args.env_name}.pt'
+        log.debug(f'Perceptual loss enabled. Using the classifier stored at {regressor_path}')
         encoder_pretrained.load_state_dict(torch.load(regressor_path))
         encoder_pretrained.to(device)
         # freeze the encoder
@@ -316,7 +319,7 @@ def train_autoencoder():
         percept_loss = LPIPS(behavior_predictor=encoder_pretrained, spatial=False)
             
 
-    optimizer = Adam(model.parameters(), lr=1e-3)
+    optimizer = Adam(model.parameters(), lr=1e-4)
 
     mse_loss_func = mse_loss_from_weights_dict
 
@@ -443,9 +446,9 @@ def train_autoencoder():
 
     print('Saving final model checkpoint...')
     if args.conditional:
-        model_name = f'{exp_name}_conditional_autoencoder'
+        model_name = f'{exp_name}.pt'
     else:
-        model_name = f'{exp_name}_autoencoder.pt'
+        model_name = f'{exp_name}.pt'
     torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), model_name))
 
 
