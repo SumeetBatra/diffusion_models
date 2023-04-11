@@ -8,6 +8,7 @@ from brax.physics.base import QP, Info
 from brax.physics.system import System
 
 from envs.brax_custom.custom_wrappers.base_wrappers import QDEnv
+from brax.envs.humanoid import _SYSTEM_CONFIG as HUMANOID_SYSTEM_CONFIG
 
 FEET_NAMES = {
     "ant": ["$ Body 4", "$ Body 7", "$ Body 10", "$ Body 13"],
@@ -331,3 +332,77 @@ class NoForwardRewardWrapper(Wrapper):
         # update the reward (remove forward_reward)
         new_reward = state.reward - state.metrics[self._fd_reward_field]
         return state.replace(reward=new_reward)  # type: ignore
+
+
+class ArmHeightWrapper(QDEnv):
+    '''Wraps gym environments to add arm height data. Only applies to humanoid'''
+    def __init__(self,
+                 env: Env,
+                 env_name: str,
+                 minval: Optional[float] = 0.0,
+                 maxval: Optional[float] = 10.0):
+        super().__init__(config=None)
+
+        self.env = env
+        self._env_name = env_name
+        if 'humanoid' not in env_name:
+            raise NotImplementedError(f'This wrapper only supports Humanoid, not {env_name}')
+
+        if hasattr(self.env, 'sys'):
+            arm_names = ['right_lower_arm', 'left_lower_arm']
+            self._arm_inds = jp.array(
+                [env.sys.body.index.get(name) for name in arm_names]
+            )
+        else:
+            raise NotImplementedError(f"This wrapper does not support {env_name} yet.")
+
+        self._minval = minval
+        self._maxval = maxval
+
+    @property
+    def state_descriptor_length(self) -> int:
+        return self.behavior_descriptor_length
+
+    @property
+    def state_descriptor_name(self) -> str:
+        return "arm_height"
+
+    @property
+    def state_descriptor_limits(self) -> Tuple[List[float], List[float]]:
+        return self.behavior_descriptor_limits
+
+    @property
+    def behavior_descriptor_length(self) -> int:
+        return len(self._arm_inds)
+
+    @property
+    def behavior_descriptor_limits(self) -> Tuple[List[float], List[float]]:
+        return self.state_descriptor_limits
+
+    @property
+    def name(self) -> str:
+        return self._env_name
+
+    @property
+    def unwrapped(self) -> Env:
+        return self.env.unwrapped
+
+    def __getattr__(self, name: str) -> Any:
+        if name == "__setstate__":
+            raise AttributeError(name)
+        return getattr(self.env, name)
+
+    def reset(self, rng: jp.ndarray) -> State:
+        state = self.env.reset(rng)
+        state.info['measures'] = jnp.clip(jp.array(
+            [state.qp.pos[idx][2] for idx in self._arm_inds]
+        ), a_min=self._minval, a_max=self._maxval)
+        return state
+
+    def step(self, state: State, action: jp.ndarray) -> State:
+        state = self.env.step(state, action)
+        # get z height for each arm
+        state.info['measures'] = jnp.clip(jp.array(
+            [state.qp.pos[idx][2] for idx in self._arm_inds]
+        ), a_min=self._minval, a_max=self._maxval)
+        return state
