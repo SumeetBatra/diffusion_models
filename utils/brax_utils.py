@@ -49,6 +49,8 @@ shared_params = OrderedDict({
             'archive_resolution': 2500,
             'skip_len': 200,
             'algorithm_name': 'cma_mae_100_0.01',
+            'obs_dim': 227,
+            'action_dim': 17,
             'env_cfg': {
                 'env_name': 'humanoid',
                 'num_dims': 2,
