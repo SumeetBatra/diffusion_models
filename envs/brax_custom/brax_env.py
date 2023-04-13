@@ -12,19 +12,19 @@ v = torch.ones(1, device='cuda')  # init torch cuda before jax
 _to_custom_env = {
     'ant': {'custom_env_name': 'brax_custom-ant-v0',
             'kwargs': {
-                'action_clip': (-1, 1),
+                'clip_actions': (-1, 1),
             }},
     'humanoid': {'custom_env_name': 'brax_custom-humanoid-v0',
                  'kwargs': {
-                     'action_clip': (-1, 1),
+                     'clip_actions': (-1, 1),
                  }},
     'walker2d': {'custom_env_name': 'brax-custom-walker2d-v0',
                  'kwargs': {
-                     'action_clip': (-1, 1),
+                     'clip_actions': (-1, 1),
                  }},
     'halfcheetah': {'custom_env_name': 'brax-custom-halfcheetah-v0',
                     'kwargs': {
-                        'action_clip': (-1, 1),
+                        'clip_actions': (-1, 1),
                     }},
 }
 
