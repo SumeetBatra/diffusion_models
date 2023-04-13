@@ -33,7 +33,7 @@ class LatentDiffusion(GaussianDiffusion):
         vlb_loss = mse(model_output, target, mean=False).mean([1, 2, 3])
         vlb_weights = self.vlb_weights.to(self.device)
         vlb_loss = (vlb_weights[t] * vlb_loss).mean()
-        vlb_loss *= 1e-5
+        vlb_loss_coef = 1e-5
 
         # simple loss term
         logvar_t = model.logvar[t]
@@ -41,15 +41,17 @@ class LatentDiffusion(GaussianDiffusion):
         simple_loss = (simple_loss / torch.exp(logvar_t)) + logvar_t
         simple_loss = simple_loss.mean()
 
-        loss = simple_loss + vlb_loss
+        loss = simple_loss + vlb_loss_coef * vlb_loss
         loss_dict = {
             f'losses/simple_loss': simple_loss.mean().item(),
             f'losses/vlb_loss': vlb_loss.mean().item(),
+        }
+        info_dict = {
             f'train/log_var': model.logvar.mean().item(),
             f'data/model_output_mean': output_mean.item(),
             f'data/model_output_var': output_var.item(),
         }
-        return loss, loss_dict
+        return loss, loss_dict, info_dict
 
     def p_mean_variance(self, model, x, t, clip_denoised=True, denoised_fn=None, model_kwargs=None):
         if model_kwargs is None:
