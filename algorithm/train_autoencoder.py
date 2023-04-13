@@ -300,23 +300,23 @@ def train_autoencoder():
         model.load_state_dict(torch.load(model_checkpoint))
     model.to(device)
 
-    if args.perceptual_loss_coef > 0:
-        obs_shape, action_shape = 18, np.array([6])
-        encoder_pretrained = ModelEncoder(obs_shape=obs_shape,
-                                          action_shape=action_shape,
-                                          emb_channels=args.emb_channels,
-                                          z_channels=args.z_channels,
-                                          z_height=args.z_height,
-                                          regress_to_measure=True)
-        regressor_path = f'checkpoints/regressor_{args.env_name}.pt'
-        log.debug(f'Perceptual loss enabled. Using the classifier stored at {regressor_path}')
-        encoder_pretrained.load_state_dict(torch.load(regressor_path))
-        encoder_pretrained.to(device)
-        # freeze the encoder
-        for param in encoder_pretrained.parameters():
-            param.requires_grad = False
-        # 'perceptual loss' using deep features
-        percept_loss = LPIPS(behavior_predictor=encoder_pretrained, spatial=False)
+    # if args.perceptual_loss_coef > 0:
+    obs_shape, action_shape = 18, np.array([6])
+    encoder_pretrained = ModelEncoder(obs_shape=obs_shape,
+                                        action_shape=action_shape,
+                                        emb_channels=args.emb_channels,
+                                        z_channels=args.z_channels,
+                                        z_height=args.z_height,
+                                        regress_to_measure=True)
+    regressor_path = f'checkpoints/regressor_{args.env_name}.pt'
+    log.debug(f'Perceptual loss enabled. Using the classifier stored at {regressor_path}')
+    encoder_pretrained.load_state_dict(torch.load(regressor_path))
+    encoder_pretrained.to(device)
+    # freeze the encoder
+    for param in encoder_pretrained.parameters():
+        param.requires_grad = False
+    # 'perceptual loss' using deep features
+    percept_loss = LPIPS(behavior_predictor=encoder_pretrained, spatial=False)
             
 
     optimizer = Adam(model.parameters(), lr=1e-4)
