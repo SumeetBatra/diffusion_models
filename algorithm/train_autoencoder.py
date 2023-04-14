@@ -56,7 +56,7 @@ def parse_args():
     parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--inp_coef', type=float, default=1)
     parser.add_argument('--kl_coef', type=float, default=1e-6)
-    parser.add_argument('--perceptual_loss_coef', type=float, default=0)
+    parser.add_argument('--perceptual_loss_coef', type=float, default=1e-4)
     parser.add_argument('--conditional', type=lambda x: bool(strtobool(x)), default=False)
 
     args = parser.parse_args()
