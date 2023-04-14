@@ -50,6 +50,7 @@ def parse_args():
     parser.add_argument('--z_channels', type=int, default=4)
     parser.add_argument('--z_height', type=int, default=4)
     parser.add_argument('--autoencoder_cp_path', type=str)
+    parser.add_argument('--model_checkpoint', type=str, default=None, help='Load an existing diffusion model for additional training')
     # Task specific args
     parser.add_argument('--env_name', choices=['walker2d', 'halfcheetah'])
 
@@ -79,7 +80,7 @@ def train(cfg):
 
     model_checkpoint_folder = Path('./checkpoints')
     model_checkpoint_folder.mkdir(exist_ok=True)
-    model_checkpoint = None
+    model_checkpoint = cfg.model_checkpoint
 
     exp_name = 'diffusion_model_' + datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -255,7 +256,8 @@ def train(cfg):
             })
 
     print('Saving final model checkpoint...')
-    torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), 'model_cp.pt'))
+    cp_name = f'diffusion_model_{cfg.exp_name}_{datetime.now().strftime("%Y%m%d-%H%M")}.pt'
+    torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), cp_name))
     # save the cfg
     save_cfg(model_checkpoint_folder, cfg)
 

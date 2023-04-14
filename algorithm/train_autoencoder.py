@@ -192,6 +192,7 @@ def shaped_elites_dataset_factory(env_name, merge_obsnorm = True, batch_size=32,
     archive_df_paths = glob.glob(archive_data_path + '/archive*100x100*.pkl')
     for path in archive_df_paths:
         with open(path, 'rb') as f:
+            log.info(f'Loading archive at {path}')
             archive_df = pickle.load(f)
             archive_dfs.append(archive_df)
 
@@ -436,7 +437,6 @@ def train_autoencoder():
             writer.add_scalar("Loss/kl_loss", epoch_kl_loss / len(dataloader), global_step+1)
             writer.add_scalar("Loss/perceptual_loss", epoch_perceptual_loss / len(dataloader), global_step+1)
             wandb.log({
-                # TODO: why are we dividing by the length of the dataloader?
                 'Loss/mse_loss': epoch_mse_loss / len(dataloader),
                 'Loss/kl_loss': epoch_kl_loss / len(dataloader),
                 'Loss/perceptual_loss': epoch_perceptual_loss / len(dataloader),
