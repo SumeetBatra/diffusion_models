@@ -17,6 +17,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
                  normalize_obs: bool = False,
                  z_height: int = 4,
                  conditional: bool = False,
+                 ghn_hid: int = 64,
                  ):
         """
         :param emb_channels: is the number of dimensions in the quantized embedding space
@@ -41,7 +42,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
         config['weight_norm'] = False
         config['ve'] = 1 > 1
         config['layernorm'] = True
-        config['hid'] = 64
+        config['hid'] = ghn_hid
         config['z_channels'] = z_channels
         config['z_height'] = z_height
         config['norm_variables'] = False

@@ -42,6 +42,8 @@ def parse_args():
     parser.add_argument('--emb_channels', type=int, default=4)
     parser.add_argument('--z_channels', type=int, default=4)
     parser.add_argument('--z_height', type=int, default=4)
+    parser.add_argument('--ghn_hid', type=int, default=64)
+    
     # wandb
     parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
@@ -298,6 +300,7 @@ def train_autoencoder():
                                 action_shape=action_shape,
                                 z_height=args.z_height,
                                 conditional=args.conditional,
+                                ghn_hid=args.ghn_hid,
                                 )
     if model_checkpoint is not None:
         log.info(f'Loading model from checkpoint {model_checkpoint}')
