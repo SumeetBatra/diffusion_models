@@ -17,6 +17,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
                  normalize_obs: bool = False,
                  z_height: int = 4,
                  conditional: bool = False,
+                 ghn_hid: int = 64,
                  ):
         """
         :param emb_channels: is the number of dimensions in the quantized embedding space
@@ -41,7 +42,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
         config['weight_norm'] = False
         config['ve'] = 1 > 1
         config['layernorm'] = True
-        config['hid'] = 64
+        config['hid'] = ghn_hid
         config['z_channels'] = z_channels
         config['z_height'] = z_height
         config['norm_variables'] = False
@@ -237,9 +238,10 @@ class ModelEncoder(nn.Module):
             # TODO: @Shank should we also append the outputs of self.measure_out? I think
             # TODO: since self.out() is the 2nd to last layer, this should be enough?,
             # TODO: @Sumeet yea lets add it just in case
+            # TODO: Clean this
             if self.regress_to_measure:
                 features.append(self.measure_out(x)[:, :, None, None])
-            return features
+            return [features[-1]]
         if not self.regress_to_measure:
             return x.reshape(-1, 2 * self.z_channels, self.z_height, self.z_height)
         else:

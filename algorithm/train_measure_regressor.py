@@ -25,16 +25,16 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', type=str, choices=['halfcheetah', 'walker2d', 'humanoid', 'humanoid_crawl'])
     parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
-    parser.add_argument('--num_epochs', type=int, default=200)
+    parser.add_argument('--num_epochs', type=int, default=500)
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--emb_channels', type=int, default=512)
+    parser.add_argument('--emb_channels', type=int, default=4)
     parser.add_argument('--z_channels', type=int, default=4)
     parser.add_argument('--z_height', type=int, default=4)
     parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
-    parser.add_argument('--wandb_run_name', type=str, default='vae_run')
-    parser.add_argument('--wandb_group', type=str, default='debug')
-    parser.add_argument('--wandb_entity', type=str, default='qdrl')
+    parser.add_argument('--wandb_run_name', type=str, default='measure_regressor_run')
+    parser.add_argument('--wandb_group', type=str, default=None)
+    parser.add_argument('--wandb_entity', type=str, default=None)
     parser.add_argument('--wandb_tag', type=str, default='halfcheetah')
     parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
     parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=False)
@@ -141,4 +141,4 @@ def train_regressor():
 if __name__ == '__main__':
     train_regressor()
 
-# python -m algorithm.train_autoencoder --seed 111
+# python -m algorithm.train_measure_regressor --seed 111

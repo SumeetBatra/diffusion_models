@@ -42,6 +42,8 @@ def parse_args():
     parser.add_argument('--emb_channels', type=int, default=4)
     parser.add_argument('--z_channels', type=int, default=4)
     parser.add_argument('--z_height', type=int, default=4)
+    parser.add_argument('--ghn_hid', type=int, default=64)
+    
     # wandb
     parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
@@ -54,7 +56,7 @@ def parse_args():
     parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--inp_coef', type=float, default=1)
     parser.add_argument('--kl_coef', type=float, default=1e-6)
-    parser.add_argument('--perceptual_loss_coef', type=float, default=0)
+    parser.add_argument('--perceptual_loss_coef', type=float, default=1e-4)
     parser.add_argument('--conditional', type=lambda x: bool(strtobool(x)), default=False)
 
     args = parser.parse_args()
@@ -272,6 +274,9 @@ def train_autoencoder():
     if args.conditional:
         exp_name = 'conditional_' + exp_name
 
+    # add experiment name to args
+    args.exp_name = exp_name
+
     # set seed
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -299,29 +304,30 @@ def train_autoencoder():
                                 action_shape=action_shape,
                                 z_height=args.z_height,
                                 conditional=args.conditional,
+                                ghn_hid=args.ghn_hid,
                                 )
     if model_checkpoint is not None:
         log.info(f'Loading model from checkpoint {model_checkpoint}')
         model.load_state_dict(torch.load(model_checkpoint))
     model.to(device)
 
-    if args.perceptual_loss_coef > 0:
-        obs_shape, action_shape = 18, np.array([6])
-        encoder_pretrained = ModelEncoder(obs_shape=obs_shape,
-                                          action_shape=action_shape,
-                                          emb_channels=args.emb_channels,
-                                          z_channels=args.z_channels,
-                                          z_height=args.z_height,
-                                          regress_to_measure=True)
-        regressor_path = f'checkpoints/regressor_{args.env_name}.pt'
-        log.debug(f'Perceptual loss enabled. Using the classifier stored at {regressor_path}')
-        encoder_pretrained.load_state_dict(torch.load(regressor_path))
-        encoder_pretrained.to(device)
-        # freeze the encoder
-        for param in encoder_pretrained.parameters():
-            param.requires_grad = False
-        # 'perceptual loss' using deep features
-        percept_loss = LPIPS(behavior_predictor=encoder_pretrained, spatial=False)
+    # if args.perceptual_loss_coef > 0:
+    obs_shape, action_shape = 18, np.array([6])
+    encoder_pretrained = ModelEncoder(obs_shape=obs_shape,
+                                        action_shape=action_shape,
+                                        emb_channels=args.emb_channels,
+                                        z_channels=args.z_channels,
+                                        z_height=args.z_height,
+                                        regress_to_measure=True)
+    regressor_path = f'checkpoints/regressor_{args.env_name}.pt'
+    log.debug(f'Perceptual loss enabled. Using the classifier stored at {regressor_path}')
+    encoder_pretrained.load_state_dict(torch.load(regressor_path))
+    encoder_pretrained.to(device)
+    # freeze the encoder
+    for param in encoder_pretrained.parameters():
+        param.requires_grad = False
+    # 'perceptual loss' using deep features
+    percept_loss = LPIPS(behavior_predictor=encoder_pretrained, spatial=False)
             
 
     optimizer = Adam(model.parameters(), lr=1e-4)
