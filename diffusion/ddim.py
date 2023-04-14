@@ -53,8 +53,6 @@ class DDIMSampler():
                repeat_noise: bool = False,
                temperature: float = 1.,
                x_last: Optional[torch.Tensor] = None,
-               uncond_scale: float = 1.,
-               uncond_cond: Optional[torch.Tensor] = None,
                skip_steps: int = 0):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         bs = shape[0]
@@ -65,7 +63,7 @@ class DDIMSampler():
             index = len(timesteps) - i - 1
             ts = x.new_full(size=(bs,), fill_value=step, dtype=torch.long)
             x, pred_x0, e_t = self.p_sample(model, x, cond, ts, step, index=index, repeat_noise=repeat_noise,
-                                            temperature=temperature, uncond_scale=uncond_scale, uncond_cond=uncond_cond)
+                                            temperature=temperature)
         return x
 
     @torch.no_grad()
