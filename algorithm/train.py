@@ -159,7 +159,7 @@ def train(cfg):
 
     if cfg.track_agent_quality:
         env_cfg = AttrDict({
-            'env_name': 'halfcheetah',
+            'env_name': cfg.env_name,
             'env_batch_size': 100,
             'num_dims': 2,
             'envs_per_model': 1,
@@ -200,6 +200,8 @@ def train(cfg):
 
                 wandb.log(info)
 
+        epoch_simple_loss = 0
+        epoch_vlb_loss = 0
         for step, (policies, measures, _) in enumerate(train_dataloader):
             optimizer.zero_grad()
             batch_size = measures.shape[0]
@@ -220,23 +222,37 @@ def train(cfg):
             # Algorithm 1 line 3: sample t uniformally for every example in the batch
             t = torch.randint(0, timesteps, (batch_size,), device=device).long()
 
-            losses, info_dict = gauss_diff.compute_training_losses(model, batch, t, model_kwargs={'cond': measures})
+            losses, loss_dict, info_dict = gauss_diff.compute_training_losses(model, batch, t, model_kwargs={'cond': measures})
             loss = losses.mean()
 
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             if step % 100 == 0:
-                print(f'Loss: {loss.item()}')
-                print(f'grad norm: {grad_norm(model)}')
+                log.info(f'grad norm: {grad_norm(model)}')
             optimizer.step()
+            global_step += 1
 
-            # maybe log to wandb
+            epoch_simple_loss += loss_dict['losses/simple_loss']
+            epoch_vlb_loss += loss_dict['losses/vlb_loss']
+
+            # logging at the per-step timescale
             if cfg.use_wandb:
                 wandb.log(info_dict)
                 wandb.log({
                     'data/batch_mean': batch.mean().item(),
                     'data/batch_var': batch.var().item(),
+                    'global_step': global_step + 1
                 })
+
+        # logging at the per-epoch timescale
+        log.debug(f'Epoch: {epoch} Simple loss: {epoch_simple_loss / len(train_dataloader)}')
+        if cfg.use_wandb:
+            wandb.log({
+                'losses/simple_loss': epoch_simple_loss / len(train_dataloader),
+                'losses/vlb_loss': epoch_vlb_loss / len(train_dataloader),
+                'epoch': epoch + 1,
+                'global_step': global_step + 1
+            })
 
     print('Saving final model checkpoint...')
     torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), 'model_cp.pt'))

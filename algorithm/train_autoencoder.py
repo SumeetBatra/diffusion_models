@@ -33,13 +33,16 @@ from torch.utils.tensorboard import SummaryWriter
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', choices=['walker2d', 'halfcheetah'])
+    # experiment params
+    parser.add_argument('--env_name', choices=['walker2d', 'halfcheetah', 'humanoid', 'humanoid_crawl'])
     parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
     parser.add_argument('--num_epochs', type=int, default=200)
     parser.add_argument('--seed', type=int, default=0)
+    # VAE params
     parser.add_argument('--emb_channels', type=int, default=4)
     parser.add_argument('--z_channels', type=int, default=4)
     parser.add_argument('--z_height', type=int, default=4)
+    # wandb
     parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
     parser.add_argument('--wandb_run_name', type=str, default='vae_run')
@@ -47,6 +50,7 @@ def parse_args():
     parser.add_argument('--wandb_entity', type=str, default=None)
     parser.add_argument('--wandb_tag', type=str, default='halfcheetah')
     parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
+    # loss function hyperparams
     parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--inp_coef', type=float, default=1)
     parser.add_argument('--kl_coef', type=float, default=1e-6)
@@ -296,7 +300,7 @@ def train_autoencoder():
                                 conditional=args.conditional,
                                 )
     if model_checkpoint is not None:
-        print(f'Loading model from checkpoint')
+        log.info(f'Loading model from checkpoint {model_checkpoint}')
         model.load_state_dict(torch.load(model_checkpoint))
     model.to(device)
 
