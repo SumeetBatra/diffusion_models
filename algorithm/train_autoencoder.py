@@ -273,6 +273,9 @@ def train_autoencoder():
     if args.conditional:
         exp_name = 'conditional_' + exp_name
 
+    # add experiment name to args
+    args.exp_name = exp_name
+
     # set seed
     random.seed(args.seed)
     np.random.seed(args.seed)
