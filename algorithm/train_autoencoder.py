@@ -58,7 +58,9 @@ def parse_args():
     parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--inp_coef', type=float, default=1)
     parser.add_argument('--kl_coef', type=float, default=1e-6)
+    parser.add_argument('--use_perceptual_loss', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--perceptual_loss_coef', type=float, default=1e-4)
+    parser.add_argument('--regressor_path', type=str, default=None, help='Path to regressor model checkpoint required for perceptual loss')
     parser.add_argument('--conditional', type=lambda x: bool(strtobool(x)), default=False)
 
     args = parser.parse_args()
@@ -279,25 +281,21 @@ def train_autoencoder():
 
     # add experiment name to args
     args.exp_name = exp_name
+    exp_dir = os.path.join(args.output_dir, args.env_name)
+    os.makedirs(exp_dir, exist_ok=True)
 
-    os.makedirs(args.output_dir, exist_ok=True)
-    exp_dir = os.path.join(args.output_dir, args.exp_name)
+    vae_dir = os.path.join(exp_dir, 'autoencoder')
+    os.makedirs(vae_dir, exist_ok=True)
 
-    args.model_checkpoint_folder = os.path.join(exp_dir, 'model_checkpoints')
+    args.model_checkpoint_folder = os.path.join(vae_dir, 'model_checkpoints')
     os.makedirs(args.model_checkpoint_folder, exist_ok=True)
 
-    args.image_path = os.path.join(exp_dir, 'images')
+    args.image_path = os.path.join(vae_dir, 'images')
     os.makedirs(args.image_path, exist_ok=True)
 
-
-    regressor_path = f'checkpoints/regressor_{args.env_name}.pt'
-    # save the regressor path to args
-    args.regressor_path = regressor_path
-
     # add args to exp_dir
-    with open(os.path.join(exp_dir, 'args.json'), 'w') as f:
+    with open(os.path.join(vae_dir, 'args.json'), 'w') as f:
         json.dump(vars(args), f, indent=4)
-    
 
     # set seed
     random.seed(args.seed)
@@ -330,21 +328,22 @@ def train_autoencoder():
     model.to(device)
 
     obs_shape, action_shape = 18, np.array([6])
-    encoder_pretrained = ModelEncoder(obs_shape=obs_shape,
-                                        action_shape=action_shape,
-                                        emb_channels=args.emb_channels,
-                                        z_channels=args.z_channels,
-                                        z_height=args.z_height,
-                                        regress_to_measure=True)
-    log.debug(f'Perceptual loss enabled. Using the classifier stored at {args.regressor_path}')
-    encoder_pretrained.load_state_dict(torch.load(args.regressor_path))
-    encoder_pretrained.to(device)
-    # freeze the encoder
-    for param in encoder_pretrained.parameters():
-        param.requires_grad = False
-    # 'perceptual loss' using deep features
-    percept_loss = LPIPS(behavior_predictor=encoder_pretrained, spatial=False)
-            
+
+    if args.use_perceptual_loss:
+        encoder_pretrained = ModelEncoder(obs_shape=obs_shape,
+                                            action_shape=action_shape,
+                                            emb_channels=args.emb_channels,
+                                            z_channels=args.z_channels,
+                                            z_height=args.z_height,
+                                            regress_to_measure=True)
+        log.debug(f'Perceptual loss enabled. Using the classifier stored at {args.regressor_path}')
+        encoder_pretrained.load_state_dict(torch.load(args.regressor_path))
+        encoder_pretrained.to(device)
+        # freeze the encoder
+        for param in encoder_pretrained.parameters():
+            param.requires_grad = False
+        # 'perceptual loss' using deep features
+        percept_loss = LPIPS(behavior_predictor=encoder_pretrained, spatial=False)
 
     optimizer = Adam(model.parameters(), lr=1e-4)
 
@@ -433,14 +432,13 @@ def train_autoencoder():
             kl_loss = posterior.kl().mean()
             loss = policy_mse_loss + args.kl_coef * kl_loss
 
-            # TODO: Uncommenting so that we can track the perceptual loss even when coef is 0
-            # if args.perceptual_loss_coef > 0:
-            rec_weights_dict = agent_to_weights_dict(rec_policies)
-            rec_weights_dict['actor_logstd'] = policies['actor_logstd']
-            perceptual_loss = percept_loss(policies, rec_weights_dict).mean()
+            if args.use_perceptual_loss:
+                rec_weights_dict = agent_to_weights_dict(rec_policies)
+                rec_weights_dict['actor_logstd'] = policies['actor_logstd']
+                perceptual_loss = percept_loss(policies, rec_weights_dict).mean()
 
-            epoch_perceptual_loss += perceptual_loss.item()
-            loss += args.perceptual_loss_coef * perceptual_loss
+                epoch_perceptual_loss += perceptual_loss.item()
+                loss += args.perceptual_loss_coef * perceptual_loss
 
             loss.backward()
             # if step % 100 == 0:
