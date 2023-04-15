@@ -21,6 +21,7 @@ from utils.brax_utils import compare_rec_to_gt_policy, shared_params
 from utils.utilities import log, config_wandb
 from functools import partial
 from losses.contperceptual import LPIPS
+from utils.analysis import evaluate_vae_subsample
 
 
 import scipy.stats as stats
@@ -42,7 +43,7 @@ def parse_args():
     parser.add_argument('--emb_channels', type=int, default=4)
     parser.add_argument('--z_channels', type=int, default=4)
     parser.add_argument('--z_height', type=int, default=4)
-    parser.add_argument('--ghn_hid', type=int, default=64)
+    parser.add_argument('--ghn_hid', type=int, default=32)
     
     # wandb
     parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
@@ -211,7 +212,7 @@ def shaped_elites_dataset_factory(env_name, merge_obsnorm = True, batch_size=32,
                                          eval_batch_size=batch_size if is_eval else None,
                                          )
 
-    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval)
+    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs
 
 
 def mse_loss_from_unpadded_params(policy_in_tensors, rec_agents):
@@ -337,9 +338,9 @@ def train_autoencoder():
     model_checkpoint_folder.mkdir(exist_ok=True)
 
     train_batch_size, test_batch_size = 32, 8
-    dataloader = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=train_batch_size, \
+    dataloader, train_archive = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=train_batch_size, \
                                                is_eval=False, inp_coef=args.inp_coef)
-    test_dataloader = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=test_batch_size, \
+    test_dataloader, test_archive = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=test_batch_size, \
                                                 is_eval=True,  inp_coef=args.inp_coef)
     inp_coef = dataloader.dataset.inp_coef
 
@@ -393,6 +394,12 @@ def train_autoencoder():
 
                 wandb.log(info)
 
+            if epoch % 50 == 0:
+                # evaluate the model on the entire archive
+                print('Evaluating model on entire archive...')
+                evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = "Heatmaps", suffix = str(epoch), ignore_first=True)
+
+
         epoch_mse_loss = 0
         epoch_kl_loss = 0
         epoch_perceptual_loss = 0
@@ -433,6 +440,8 @@ def train_autoencoder():
             epoch_mse_loss += policy_mse_loss.item()
             epoch_kl_loss += kl_loss.item()
             loss_infos.append(loss_info)
+
+
     
         print(f'Epoch {epoch} MSE Loss: {epoch_mse_loss / len(dataloader)}')
         if args.use_wandb:
@@ -455,11 +464,13 @@ def train_autoencoder():
             
 
     print('Saving final model checkpoint...')
-    if args.conditional:
-        model_name = f'{exp_name}.pt'
-    else:
-        model_name = f'{exp_name}.pt'
+
+    model_name = f'{exp_name}.pt'
     torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), model_name))
+
+    # evaluate the final model on the entire archive
+    print('Evaluating final model on entire archive...')
+    evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = "Heatmaps", suffix = "final", ignore_first=False)
 
 
 if __name__ == '__main__':

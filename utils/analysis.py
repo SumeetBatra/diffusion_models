@@ -2,18 +2,19 @@ import torch
 import torch.nn as nn
 import numpy as np
 import pickle
+import os
 
 from attrdict import AttrDict
 from autoencoders.policy.hypernet import HypernetAutoEncoder as VAE
 from collections import OrderedDict
 from ribs.archives import GridArchive
 from utils.brax_utils import rollout_many_agents
-from utils.archive_utils import archive_df_to_archive, reevaluate_ppga_archive
+from utils.archive_utils import archive_df_to_archive, reevaluate_ppga_archive, save_heatmap
 from utils.brax_utils import shared_params
 from envs.brax_custom import reward_offset
 
 
-def evaluate_vae_subsample(env_name: str, model_path: str, archive_df_path: str, N: int = 100):
+def evaluate_vae_subsample(env_name: str, archive_df = None, model = None, N: int = 100, image_path: str = None, suffix: str = None, ignore_first: bool = False):
     '''Randomly sample N elites from the archive. Evaluate the original elites and the reconstructed elites
     from the VAE. Compare the performance using a subsampled QD-Score. Compare the behavior accuracy using the l2 norm
     :param env_name: Name of the environment ex walker2d
@@ -21,13 +22,23 @@ def evaluate_vae_subsample(env_name: str, model_path: str, archive_df_path: str,
     :param archive_df_path: Path to the archive df(s) used to train the VAE
     :param N: number of samples from the archive to evaluate. If N is set to -1, we will evaluate the entire archive, but
     be warned -- this is really expensive, especially for larger archives!
+    :param image_path: Path to save the heatmap images
+    :param suffix: Suffix to append to the heatmap image name
+    :param ignore_first: If True, we will not evaluate the original archive. This is useful if you want to compare the performance
     '''
 
-    vae = VAE(emb_channels=8, z_channels=4)
-    vae.load_state_dict(torch.load(model_path))
+    if type(model) == str:
+        vae = VAE(emb_channels=8, z_channels=4)
+        vae.load_state_dict(torch.load(model))
+    else:
+        vae = model
 
-    with open(archive_df_path, 'rb') as f:
-        archive_df = pickle.load(f)
+
+    if type(archive_df) == str:
+        with open(archive_df, 'rb') as f:
+            archive_df = pickle.load(f)
+    else:
+        archive_df = archive_df
 
     env_cfg = AttrDict(shared_params[env_name]['env_cfg'])
     env_cfg.seed = 1111
@@ -46,19 +57,26 @@ def evaluate_vae_subsample(env_name: str, model_path: str, archive_df_path: str,
                                              qd_offset=reward_offset[env_name])
 
     normalize_obs, normalize_returns = True, True
-    print('Re-evaluated Original Archive')
-    reevaluate_ppga_archive(env_cfg,
-                            normalize_obs,
-                            normalize_returns,
-                            original_archive)
+    if not ignore_first:
+        print('Re-evaluated Original Archive')
+        original_reevaluated_archive = reevaluate_ppga_archive(env_cfg,
+                                normalize_obs,
+                                normalize_returns,
+                                original_archive)
 
     print('Re-evaluated Reconstructed Archive')
-    reevaluate_ppga_archive(env_cfg,
+    reconstructed_evaluated_archive = reevaluate_ppga_archive(env_cfg,
                             normalize_obs,
                             normalize_returns,
                             original_archive,
                             reconstructed_agents=True,
                             vae=vae)
+    if image_path is not None:
+        if not os.path.exists(image_path):
+            os.makedirs(image_path)
+        if not ignore_first:
+            save_heatmap(original_reevaluated_archive, os.path.join(image_path, f"original_archive_{suffix}.png"))
+        save_heatmap(reconstructed_evaluated_archive, os.path.join(image_path, f"reconstructed_archive_{suffix}.png"))
 
 
 
@@ -71,4 +89,4 @@ if __name__ == '__main__':
 
     env_name = 'halfcheetah'
 
-    evaluate_vae_subsample(env_name, model_path, archive_df_path)
+    evaluate_vae_subsample(env_name, archive_df_path, model_path)
