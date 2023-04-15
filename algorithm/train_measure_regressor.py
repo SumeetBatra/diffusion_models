@@ -23,7 +23,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', type=str, choices=['halfcheetah', 'walker2d'])
+    parser.add_argument('--env_name', type=str, choices=['halfcheetah', 'walker2d', 'humanoid', 'humanoid_crawl'])
     parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
     parser.add_argument('--num_epochs', type=int, default=500)
     parser.add_argument('--seed', type=int, default=0)

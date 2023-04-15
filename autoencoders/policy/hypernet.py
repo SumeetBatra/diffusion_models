@@ -8,6 +8,22 @@ from models.hyper.ghn_modules import *
 from RL.actor_critic import Actor
 
 
+def classifier_gradients(classifier: nn.Module, x: torch.Tensor, y: torch.Tensor, classifier_scale: int = 1):
+    # TODO: THIS WON'T WORK! Need to move this to a model that predicts measures from latent codes
+    '''
+    Gets the gradients of the error between the policies' target and predicted measures
+    :param classifier: Model that predicts measures from latent codes
+    :param x: batch of latent codes
+    :param y: target measures
+    :param classifier_scale: scale of the gradient magnitude. Higher will result in stronger conditioning
+    '''
+    with torch.enable_grad():
+        x.detach().requires_grad_(True)
+        pred = classifier(x)
+        loss = F.mse_loss(pred, y)
+        return torch.autograd.grad(loss, x)[0] * classifier_scale
+
+
 class HypernetAutoEncoder(AutoEncoderBase):
     def __init__(self,
                  emb_channels: int,
