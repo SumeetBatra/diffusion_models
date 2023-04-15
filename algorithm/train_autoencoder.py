@@ -28,6 +28,7 @@ import scipy.stats as stats
 import wandb
 from datetime import datetime
 import argparse
+import json
 import random
 from torch.utils.tensorboard import SummaryWriter
 
@@ -36,9 +37,9 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # experiment params
     parser.add_argument('--env_name', choices=['walker2d', 'halfcheetah', 'humanoid', 'humanoid_crawl'])
-    parser.add_argument('--model_checkpoint', type=str, default='checkpoints')
     parser.add_argument('--num_epochs', type=int, default=200)
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--output_dir', type=str, default='results')
     # VAE params
     parser.add_argument('--emb_channels', type=int, default=4)
     parser.add_argument('--z_channels', type=int, default=4)
@@ -270,6 +271,7 @@ def agent_to_weights_dict(agents: list[Actor]):
 def train_autoencoder():
     args = parse_args()
 
+
     # experiment name
     exp_name = args.env_name + '_autoencoder_' + datetime.now().strftime("%Y%m%d-%H%M%S")
     if args.conditional:
@@ -277,6 +279,25 @@ def train_autoencoder():
 
     # add experiment name to args
     args.exp_name = exp_name
+
+    os.makedirs(args.output_dir, exist_ok=True)
+    exp_dir = os.path.join(args.output_dir, args.exp_name)
+
+    model_checkpoint_folder = os.path.join(exp_dir, 'model_checkpoints')
+    model_checkpoint_folder.mkdir(exist_ok=True)
+
+    image_path = os.path.join(exp_dir, 'images')
+    image_path.mkdir(exist_ok=True)
+
+
+    regressor_path = f'checkpoints/regressor_{args.env_name}.pt'
+    # save the regressor path to args
+    args.regressor_path = regressor_path
+
+    # add args to exp_dir
+    with open(os.path.join(exp_dir, 'args.json'), 'w') as f:
+        json.dump(vars(args), f, indent=4)
+    
 
     # set seed
     random.seed(args.seed)
@@ -298,7 +319,6 @@ def train_autoencoder():
                                         )
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model_checkpoint = None
     model = HypernetAutoEncoder(emb_channels=args.emb_channels,
                                 z_channels=args.z_channels,
                                 obs_shape=obs_dim,
@@ -307,12 +327,8 @@ def train_autoencoder():
                                 conditional=args.conditional,
                                 ghn_hid=args.ghn_hid,
                                 )
-    if model_checkpoint is not None:
-        log.info(f'Loading model from checkpoint {model_checkpoint}')
-        model.load_state_dict(torch.load(model_checkpoint))
     model.to(device)
 
-    # if args.perceptual_loss_coef > 0:
     obs_shape, action_shape = 18, np.array([6])
     encoder_pretrained = ModelEncoder(obs_shape=obs_shape,
                                         action_shape=action_shape,
@@ -320,9 +336,8 @@ def train_autoencoder():
                                         z_channels=args.z_channels,
                                         z_height=args.z_height,
                                         regress_to_measure=True)
-    regressor_path = f'checkpoints/regressor_{args.env_name}.pt'
-    log.debug(f'Perceptual loss enabled. Using the classifier stored at {regressor_path}')
-    encoder_pretrained.load_state_dict(torch.load(regressor_path))
+    log.debug(f'Perceptual loss enabled. Using the classifier stored at {args.regressor_path}')
+    encoder_pretrained.load_state_dict(torch.load(args.regressor_path))
     encoder_pretrained.to(device)
     # freeze the encoder
     for param in encoder_pretrained.parameters():
@@ -335,8 +350,6 @@ def train_autoencoder():
 
     mse_loss_func = mse_loss_from_weights_dict
 
-    model_checkpoint_folder = Path(args.model_checkpoint)
-    model_checkpoint_folder.mkdir(exist_ok=True)
 
     train_batch_size, test_batch_size = 32, 8
     dataloader, train_archive = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=train_batch_size, \
@@ -398,7 +411,7 @@ def train_autoencoder():
             if epoch % 50 == 0:
                 # evaluate the model on the entire archive
                 print('Evaluating model on entire archive...')
-                evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = "Heatmaps", suffix = str(epoch), ignore_first=True)
+                evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = image_path, suffix = str(epoch), ignore_first=True)
 
 
         epoch_mse_loss = 0
@@ -470,7 +483,7 @@ def train_autoencoder():
 
     # evaluate the final model on the entire archive
     print('Evaluating final model on entire archive...')
-    evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = "Heatmaps", suffix = "final", ignore_first=False)
+    evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = image_path, suffix = "final", ignore_first=False)
 
 
 if __name__ == '__main__':
