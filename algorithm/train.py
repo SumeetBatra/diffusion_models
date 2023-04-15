@@ -152,9 +152,9 @@ def train(cfg):
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
     train_batch_size, test_batch_size = 32, 8
-    train_dataloader = shaped_elites_dataset_factory(cfg.env_name, cfg.merge_obsnorm, batch_size=train_batch_size, \
+    train_dataloader, _ = shaped_elites_dataset_factory(cfg.env_name, cfg.merge_obsnorm, batch_size=train_batch_size, \
                                                is_eval=False, inp_coef=cfg.inp_coef)
-    test_dataloader = shaped_elites_dataset_factory(cfg.env_name, cfg.merge_obsnorm, batch_size=test_batch_size, \
+    test_dataloader, _ = shaped_elites_dataset_factory(cfg.env_name, cfg.merge_obsnorm, batch_size=test_batch_size, \
                                                 is_eval=True,  inp_coef=cfg.inp_coef)
     inp_coef = train_dataloader.dataset.inp_coef
 
