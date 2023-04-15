@@ -283,11 +283,11 @@ def train_autoencoder():
     os.makedirs(args.output_dir, exist_ok=True)
     exp_dir = os.path.join(args.output_dir, args.exp_name)
 
-    model_checkpoint_folder = os.path.join(exp_dir, 'model_checkpoints')
-    model_checkpoint_folder.mkdir(exist_ok=True)
+    args.model_checkpoint_folder = os.path.join(exp_dir, 'model_checkpoints')
+    os.makedirs(args.model_checkpoint_folder, exist_ok=True)
 
-    image_path = os.path.join(exp_dir, 'images')
-    image_path.mkdir(exist_ok=True)
+    args.image_path = os.path.join(exp_dir, 'images')
+    os.makedirs(args.image_path, exist_ok=True)
 
 
     regressor_path = f'checkpoints/regressor_{args.env_name}.pt'
@@ -411,7 +411,7 @@ def train_autoencoder():
             if epoch % 50 == 0:
                 # evaluate the model on the entire archive
                 print('Evaluating model on entire archive...')
-                evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = image_path, suffix = str(epoch), ignore_first=True)
+                evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = args.image_path, suffix = str(epoch), ignore_first=True)
 
 
         epoch_mse_loss = 0
@@ -479,11 +479,11 @@ def train_autoencoder():
     print('Saving final model checkpoint...')
 
     model_name = f'{exp_name}.pt'
-    torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), model_name))
+    torch.save(model.state_dict(), os.path.join(str(args.model_checkpoint_folder), model_name))
 
     # evaluate the final model on the entire archive
     print('Evaluating final model on entire archive...')
-    evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = image_path, suffix = "final", ignore_first=False)
+    evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = args.image_path, suffix = "final", ignore_first=False)
 
 
 if __name__ == '__main__':
