@@ -62,6 +62,8 @@ def parse_args():
     parser.add_argument('--perceptual_loss_coef', type=float, default=1e-4)
     parser.add_argument('--regressor_path', type=str, default=None, help='Path to regressor model checkpoint required for perceptual loss')
     parser.add_argument('--conditional', type=lambda x: bool(strtobool(x)), default=False)
+    # misc
+    parser.add_argument('--reevaluate_archive_vae', type=lambda x: bool(strtobool(x)), default=True, help='Evaluate the VAE on the entire archive every 50 epochs')
 
     args = parser.parse_args()
     return args
@@ -407,7 +409,7 @@ def train_autoencoder():
 
                 wandb.log(info)
 
-            if epoch % 50 == 0:
+            if epoch % 50 == 0 and args.reevaluate_archive_vae:
                 # evaluate the model on the entire archive
                 print('Evaluating model on entire archive...')
                 evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = args.image_path, suffix = str(epoch), ignore_first=True)

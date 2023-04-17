@@ -11,7 +11,7 @@ from torch.utils.data import Dataset, DataLoader
 from RL.actor_critic import Actor
 # from ribs.archives._elite import EliteBatch
 from tqdm import tqdm
-
+from utils.normalize import ObsNormalizer
 
 def readonly(arr):
     """Sets an array to be readonly."""
@@ -65,7 +65,12 @@ class ShapedEliteDataset(Dataset):
         obsnorms = []
         for i, params in tqdm(enumerate(elites_list)):
             weights_dict = Actor(self.obs_dim, self.action_shape, self.normalize_obs, True).to(self.device).get_deserialized_weights(params)
-            obs_normalizer = self.metadata[i][0]['obs_normalizer']
+            normalize_obs = self.metadata[i][0]['obs_normalizer']
+            if isinstance(normalize_obs, dict):
+                obs_normalizer = ObsNormalizer(self.obs_dim).to(self.device)
+                obs_normalizer.load_state_dict(normalize_obs)
+            else:
+                obs_normalizer = normalize_obs
             if self.normalize_obs:
                 weights_dict = self._integrate_obs_normalizer(weights_dict, obs_normalizer, self.inp_coef)
             weight_dicts.append(weights_dict)

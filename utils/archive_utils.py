@@ -16,6 +16,7 @@ from RL.actor_critic import Actor, PGAMEActor
 from models.vectorized import VectorizedActor
 from envs.brax_custom.brax_env import make_vec_env_brax
 from envs.brax_custom import reward_offset
+from utils.normalize import ObsNormalizer
 
 
 def save_heatmap(archive, heatmap_path, emitter_loc: Optional[tuple[float, ...]] = None,
@@ -165,7 +166,11 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
     for elite in original_archive:
         agent = Actor(obs_shape[0], action_shape, normalize_obs, normalize_returns).deserialize(elite.solution).to(device)
         if normalize_obs:
-            agent.obs_normalizer = elite.metadata['obs_normalizer']
+            obs_norm = elite.metadata['obs_normalizer']
+            if isinstance(obs_norm, dict):
+                agent.obs_normalizer.load_state_dict(obs_norm)
+            else:
+                agent.obs_normalizer = obs_norm
         agents.append(agent)
     agents = np.array(agents)
 
