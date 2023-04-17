@@ -332,7 +332,7 @@ def train_autoencoder():
                                 )
     model.to(device)
 
-    obs_shape, action_shape = 18, np.array([6])
+    obs_shape, action_shape = obs_dim, action_shape = shared_params[args.env_name]['obs_dim'], np.array([shared_params[args.env_name]['action_dim']])
 
     if args.use_perceptual_loss:
         encoder_pretrained = ModelEncoder(obs_shape=obs_shape,

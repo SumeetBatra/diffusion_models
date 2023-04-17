@@ -97,7 +97,7 @@ def train_regressor():
     model_checkpoint_folder.mkdir(exist_ok=True)
 
     train_batch_size = 32
-    dataloader = shaped_elites_dataset_factory(args.env_name,
+    dataloader, _ = shaped_elites_dataset_factory(args.env_name,
                                                args.merge_obsnorm,
                                                batch_size=train_batch_size,
                                                is_eval=False,
