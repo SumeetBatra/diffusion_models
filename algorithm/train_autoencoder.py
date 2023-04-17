@@ -289,6 +289,9 @@ def train_autoencoder():
     vae_dir = os.path.join(exp_dir, 'autoencoder')
     os.makedirs(vae_dir, exist_ok=True)
 
+    vae_dir = os.path.join(vae_dir, exp_name)
+    os.makedirs(vae_dir, exist_ok=True)
+
     args.model_checkpoint_folder = os.path.join(vae_dir, 'model_checkpoints')
     os.makedirs(args.model_checkpoint_folder, exist_ok=True)
 
