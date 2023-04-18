@@ -141,6 +141,19 @@ def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, de
 
     return rec_agents
 
+def reconstruct_agents_from_ldm(original_agents, original_measures, vae: nn.Module, device, sampler, scale_factor, diffusion_model):
+    batch_size = len(original_measures)
+    original_measures = torch.tensor(original_measures).reshape(batch_size, -1).to(device).to(torch.float32)
+    samples = sampler.sample(diffusion_model, shape=[batch_size, 4, 4, 4], cond=original_measures)
+    samples *= (1 / scale_factor)
+    rec_agents = vae.decode(samples)
+
+    if original_agents[0].obs_normalizer is not None:
+        for orig_agent, rec_agent in zip(original_agents, rec_agents):
+            rec_agent.obs_normalizer = orig_agent.obs_normalizer
+
+    return rec_agents
+    
 
 def reevaluate_ppga_archive(env_cfg: AttrDict,
                             normalize_obs: bool,
@@ -149,6 +162,9 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                             solution_batch_size: int = 100,
                             reconstructed_agents: bool = False,
                             vae: nn.Module = None,
+                            sampler = None,
+                            scale_factor = None,
+                            diffusion_model = None,
                             save_path=None):
     num_sols = len(original_archive)
     print(f'{num_sols=}')
@@ -160,12 +176,16 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
 
     if vae is not None:
         vae.to(device)
+    
+    if diffusion_model is not None:
+        diffusion_model.to(device)
 
     if reconstructed_agents:
         assert vae is not None and isinstance(vae, nn.Module), 'reconstructed_agents was set to true, but a valid VAE ' \
                                                                'model was not passed in'
 
     agents = []
+    measures_list = []
     for elite in original_archive:
         agent = Actor(obs_shape[0], action_shape, normalize_obs, normalize_returns).deserialize(elite.solution).to(device)
         if normalize_obs:
@@ -175,15 +195,21 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
             else:
                 agent.obs_normalizer = obs_norm
         agents.append(agent)
+        measures_list.append(elite.measures)
     agents = np.array(agents)
+    measures_list = np.array(measures_list)
 
     all_objs, all_measures, all_metadata = [], [], []
     for i in range(0, num_sols, solution_batch_size):
         agent_batch = agents[i: i + solution_batch_size]
+        measure_batch = measures_list[i: i + solution_batch_size]
 
         if reconstructed_agents:
-            agent_batch = reconstruct_agents_from_vae(agent_batch, vae, device)
-
+            if diffusion_model is None:
+                agent_batch = reconstruct_agents_from_vae(agent_batch, vae, device)
+            else:
+                agent_batch = reconstruct_agents_from_ldm(agent_batch, measure_batch, vae, device, sampler, scale_factor, diffusion_model)
+        
         if env_cfg.env_batch_size % len(agent_batch) != 0 and len(original_archive) % solution_batch_size != 0:
             del vec_env
             env_cfg.env_batch_size = len(agent_batch) * 50

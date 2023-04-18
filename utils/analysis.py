@@ -102,6 +102,86 @@ def evaluate_vae_subsample(env_name: str, archive_df = None, model = None, N: in
     }
     return results, image_results
 
+def evaluate_ldm_subsample(env_name: str, archive_df = None, ldm = None ,autoencoder = None, N: int = 100, image_path: str = None, suffix: str = None, ignore_first: bool = False, sampler = None, scale_factor = None):
+    if type(archive_df) == str:
+        with open(archive_df, 'rb') as f:
+            archive_df = pickle.load(f)
+    else:
+        archive_df = archive_df
+
+    env_cfg = AttrDict(shared_params[env_name]['env_cfg'])
+    env_cfg.seed = 1111
+
+    if N != -1:
+        archive_df = archive_df.sample(N)
+    env_cfg = AttrDict(shared_params[env_name]['env_cfg'])
+    env_cfg.seed = 1111
+
+    if N != -1:
+        archive_df = archive_df.sample(N)
+
+    soln_dim = archive_df.filter(regex='solution*').to_numpy().shape[1]
+    archive_dims = [env_cfg['grid_size']] * env_cfg['num_dims']
+    ranges = [(0.0, 1.0)] * env_cfg['num_dims']
+
+    original_archive = archive_df_to_archive(archive_df,
+                                             solution_dim=soln_dim,
+                                             dims=archive_dims,
+                                             ranges=ranges,
+                                             seed=env_cfg.seed,
+                                             qd_offset=reward_offset[env_name])
+
+    normalize_obs, normalize_returns = True, True
+    if not ignore_first:
+        print('Re-evaluated Original Archive')
+        original_reevaluated_archive = reevaluate_ppga_archive(env_cfg,
+                                normalize_obs,
+                                normalize_returns,
+                                original_archive)
+        original_results = {
+                'Coverage': original_reevaluated_archive.stats.coverage,
+                'Max_fitness': original_reevaluated_archive.stats.obj_max,
+                'Avg_Fitness': original_reevaluated_archive.stats.obj_mean,
+                'QD_Score': original_reevaluated_archive.offset_qd_score
+        }
+
+    print('Re-evaluated Reconstructed Archive')
+    reconstructed_evaluated_archive = reevaluate_ppga_archive(env_cfg,
+                            normalize_obs,
+                            normalize_returns,
+                            original_archive,
+                            reconstructed_agents=True,
+                            vae=autoencoder,
+                            sampler = sampler,
+                            scale_factor = scale_factor,
+                            diffusion_model = ldm,
+                            )
+    reconstructed_results = {
+            'Coverage': reconstructed_evaluated_archive.stats.coverage,
+            'Max_fitness': reconstructed_evaluated_archive.stats.obj_max,
+            'Avg_Fitness': reconstructed_evaluated_archive.stats.obj_mean,
+            'QD_Score': reconstructed_evaluated_archive.offset_qd_score
+    }
+    results = {
+        'Original': original_results if not ignore_first else None,
+        'Reconstructed': reconstructed_results,
+    }
+
+
+    if image_path is not None:
+        if not os.path.exists(image_path):
+            os.makedirs(image_path)
+        if not ignore_first:
+            orig_image_array = save_heatmap(original_reevaluated_archive, os.path.join(image_path, f"original_archive_{suffix}.png"))
+        recon_image_array = save_heatmap(reconstructed_evaluated_archive, os.path.join(image_path, f"reconstructed_archive_{suffix}.png"))
+
+    image_results = {
+        'Original': orig_image_array if not ignore_first else None,
+        'Reconstructed': recon_image_array,
+    }
+    return results, image_results
+
+
 
 
 if __name__ == '__main__':
