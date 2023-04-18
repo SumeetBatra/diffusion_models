@@ -87,16 +87,20 @@ def evaluate_vae_subsample(env_name: str, archive_df = None, model = None, N: in
         'Original': original_results if not ignore_first else None,
         'Reconstructed': reconstructed_results,
     }
-    return results
 
 
     if image_path is not None:
         if not os.path.exists(image_path):
             os.makedirs(image_path)
         if not ignore_first:
-            save_heatmap(original_reevaluated_archive, os.path.join(image_path, f"original_archive_{suffix}.png"))
-        save_heatmap(reconstructed_evaluated_archive, os.path.join(image_path, f"reconstructed_archive_{suffix}.png"))
+            orig_image_array = save_heatmap(original_reevaluated_archive, os.path.join(image_path, f"original_archive_{suffix}.png"))
+        recon_image_array = save_heatmap(reconstructed_evaluated_archive, os.path.join(image_path, f"reconstructed_archive_{suffix}.png"))
 
+    image_results = {
+        'Original': orig_image_array if not ignore_first else None,
+        'Reconstructed': recon_image_array,
+    }
+    return results, image_results
 
 
 

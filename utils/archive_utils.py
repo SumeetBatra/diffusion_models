@@ -41,6 +41,9 @@ def save_heatmap(archive, heatmap_path, emitter_loc: Optional[tuple[float, ...]]
         plt.savefig(heatmap_path)
     plt.close('all')
 
+    # return the image as a numpy array
+    return plt.imread(heatmap_path)
+
 
 def load_scheduler_from_checkpoint(scheduler_path, seed, device):
     assert os.path.exists(scheduler_path), f'Error! {scheduler_path=} does not exist'
