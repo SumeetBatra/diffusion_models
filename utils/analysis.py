@@ -63,6 +63,12 @@ def evaluate_vae_subsample(env_name: str, archive_df = None, model = None, N: in
                                 normalize_obs,
                                 normalize_returns,
                                 original_archive)
+        original_results = {
+                'Coverage': original_reevaluated_archive.stats.coverage,
+                'Max_fitness': original_reevaluated_archive.stats.obj_max,
+                'Avg_Fitness': original_reevaluated_archive.stats.obj_mean,
+                'QD_Score': original_reevaluated_archive.offset_qd_score
+        }
 
     print('Re-evaluated Reconstructed Archive')
     reconstructed_evaluated_archive = reevaluate_ppga_archive(env_cfg,
@@ -71,6 +77,19 @@ def evaluate_vae_subsample(env_name: str, archive_df = None, model = None, N: in
                             original_archive,
                             reconstructed_agents=True,
                             vae=vae)
+    reconstructed_results = {
+            'Coverage': reconstructed_evaluated_archive.stats.coverage,
+            'Max_fitness': reconstructed_evaluated_archive.stats.obj_max,
+            'Avg_Fitness': reconstructed_evaluated_archive.stats.obj_mean,
+            'QD_Score': reconstructed_evaluated_archive.offset_qd_score
+    }
+    results = {
+        'Original': original_results if not ignore_first else None,
+        'Reconstructed': reconstructed_results,
+    }
+    return results
+
+
     if image_path is not None:
         if not os.path.exists(image_path):
             os.makedirs(image_path)

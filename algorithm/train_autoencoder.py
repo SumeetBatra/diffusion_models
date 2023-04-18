@@ -400,6 +400,14 @@ def train_autoencoder():
 
                 for key, val in info2.items():
                     info['Conditional_' + key] = val
+
+            if epoch % 50 == 0 and args.reevaluate_archive_vae:
+                # evaluate the model on the entire archive
+                print('Evaluating model on entire archive...')
+                subsample_results = evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = args.image_path, suffix = str(epoch), ignore_first=True)
+                for key, val in subsample_results['Reconstructed'].items():
+                    info['Archive/' + key] = val
+
             # log items to tensorboard and wandb
             if args.use_wandb:
                 for key, val in info.items():
@@ -411,12 +419,6 @@ def train_autoencoder():
                 })
 
                 wandb.log(info)
-
-            if epoch % 50 == 0 and args.reevaluate_archive_vae:
-                # evaluate the model on the entire archive
-                print('Evaluating model on entire archive...')
-                evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = args.image_path, suffix = str(epoch), ignore_first=True)
-
 
         epoch_mse_loss = 0
         epoch_kl_loss = 0
@@ -486,8 +488,9 @@ def train_autoencoder():
 
     # evaluate the final model on the entire archive
     print('Evaluating final model on entire archive...')
-    evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = args.image_path, suffix = "final", ignore_first=False)
-
+    subsample_results = evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = args.image_path, suffix = "final", ignore_first=False)
+    log.debug(f"Final Reconstruction Results: {subsample_results['Reconstructed']}")
+    log.debug(f"Original Archive Reevaluated Results: {subsample_results['Original']}")
 
 if __name__ == '__main__':
     train_autoencoder()
