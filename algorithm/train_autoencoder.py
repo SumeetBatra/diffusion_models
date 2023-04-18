@@ -376,7 +376,7 @@ def train_autoencoder():
 
     epochs = args.num_epochs
     global_step = 0
-    for epoch in range(epochs):
+    for epoch in range(epochs + 1):
 
         if args.track_agent_quality and epoch % 10 == 0:
             # get a ground truth policy and evaluate it. Then get the reconstructed policy and compare its
@@ -494,8 +494,8 @@ def train_autoencoder():
     log.debug(f"Original Archive Reevaluated Results: {subsample_results['Original']}")
 
     if args.use_wandb:
-        wandb.log({'Final_Archive/recon_image': wandb.Image(image_results['Reconstructed'], caption=f"Final")})
-        wandb.log({'Final_Archive/original_image': wandb.Image(image_results['Original'], caption=f"Final")})
+        wandb.log({'Archive/recon_image_final': wandb.Image(image_results['Reconstructed'], caption=f"Final")})
+        wandb.log({'Archive/original_image': wandb.Image(image_results['Original'], caption=f"Final")})
 if __name__ == '__main__':
     train_autoencoder()
 
