@@ -213,7 +213,7 @@ def train(cfg):
 
             info = evaluate_agent_quality(env_cfg, env, gt_params_batch, rec_policies, obsnorms, test_batch_size, inp_coef, device, normalize_obs=not cfg.merge_obsnorm)
 
-            if epoch % 5 == 0 and cfg.reevaluate_archive_vae:
+            if epoch % 50 == 0 and cfg.reevaluate_archive_vae:
                 # evaluate the model on the entire archive
                 print('Evaluating model on entire archive...')
                 subsample_results, image_results = evaluate_ldm_subsample(env_name=cfg.env_name, archive_df=train_archive[0], ldm=model, autoencoder=autoencoder, N=-1, image_path = cfg.image_path, suffix = str(epoch), ignore_first=True, sampler=sampler, scale_factor=scale_factor)
