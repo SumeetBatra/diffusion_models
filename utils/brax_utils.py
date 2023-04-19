@@ -197,7 +197,7 @@ def rollout_many_agents(agents: list[Actor], env_cfg, vec_env, device, determini
 
     assert vec_env.num_envs % len(agents) == 0, 'The num_envs parameter must be a multiple of the number of agents'
 
-    normalize_obs = True if agents[0].obs_normalizer is not None else False
+    normalize_obs = False
     obs_shape = vec_env.single_observation_space.shape
 
     vec_agent = VectorizedActor(agents, Actor, normalize_obs=normalize_obs, obs_shape=obs_shape, normalize_returns=False)
@@ -228,7 +228,7 @@ def rollout_many_agents(agents: list[Actor], env_cfg, vec_env, device, determini
                 acts = vec_agent.actor_mean(obs)
             else:
                 acts, _, _ = vec_agent.get_action(obs)
-
+            acts = acts.to(torch.float32)
             obs, rew, next_dones, infos = vec_env.step(acts)
             measures_acc[traj_length] = infos['measures']
             obs = obs.to(device)
@@ -242,7 +242,7 @@ def rollout_many_agents(agents: list[Actor], env_cfg, vec_env, device, determini
     for i in range(vec_env.num_envs):
         measures[i] = measures_acc[:traj_lengths[i], i].sum(dim=0) / traj_lengths[i]
     measures = measures.reshape(vec_agent.num_models, vec_env.num_envs // vec_agent.num_models, -1).mean(
-        dim=1).detach().cpu().numpy()
+        dim=1)
 
     total_reward = total_reward.reshape((vec_agent.num_models, vec_env.num_envs // vec_agent.num_models)).mean(
         axis=1)
@@ -251,7 +251,7 @@ def rollout_many_agents(agents: list[Actor], env_cfg, vec_env, device, determini
     min_reward = np.min(total_reward)
     mean_reward = np.mean(total_reward)
     mean_traj_length = torch.mean(traj_lengths.to(torch.float64)).detach().cpu().numpy().item()
-    objective_measures = np.concatenate((total_reward.reshape(-1, 1), measures), axis=1)
+    objective_measures = np.concatenate((total_reward.reshape(-1, 1), measures.detach().cpu().numpy()), axis=1)
 
     if verbose:
         np.set_printoptions(suppress=True)

@@ -267,6 +267,26 @@ def archive_df_to_archive(archive_df: pandas.DataFrame, **kwargs):
     return archive
 
 
+def sample_agents_from_archive(env_cfg, archive_df):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    q1 = archive_df.query('0 <= measure_0 < 0.5').query('0 <= measure_1 < 0.5').sample(10)
+    q2 = archive_df.query('0.5 <= measure_0 < 1.0').query('0 <= measure_1 < 0.5').sample(10)
+    q3 = archive_df.query('0 <= measure_0 < 0.5').query('0.5 <= measure_1 < 1.0').sample(10)
+    q4 = archive_df.query('0.5 <= measure_0 < 1.0').query('0.5 <= measure_1 < 1.0').sample(10)
+
+    agents = []
+    for quad in [q1, q2, q3, q4]:
+        sols = quad.filter(regex='solution*')
+        md = quad['metadata'].to_numpy()
+        for i, sol in enumerate(sols):
+            agent = Actor(env_cfg.obs_shape, env_cfg.action_shape, normalize_obs=True, normalize_returns=False).deserialize(sol)
+            agent.to(device)
+            agent.obs_normalizer.load_state_dict(md[i]['obs_normalizer'])
+            agents.append(agent)
+    return agents
+
+
 if __name__ == '__main__':
     # evaluate_pga_me_archive('/home/sumeet/QDax/experiments/walker2d_checkpoint/checkpoint_00731')
     # load_and_eval_archive('/home/sumeet/QDax/experiments/pga_me_ant_uni_testrun_seed_1111/checkpoints/checkpoint_00399/ribs_archive.pkl')
