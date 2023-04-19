@@ -289,9 +289,9 @@ def train(cfg):
 
     print('Saving final model checkpoint...')
     cp_name = f'diffusion_model_{cfg.env_name}_{datetime.now().strftime("%Y%m%d-%H%M")}.pt'
-    torch.save(model.state_dict(), os.path.join(str(model_checkpoint_folder), cp_name))
+    torch.save(model.state_dict(), os.path.join(str(cfg.model_checkpoint_folder), cp_name))
     # save the cfg
-    save_cfg(model_checkpoint_folder, cfg)
+    save_cfg(cfg.model_checkpoint_folder, cfg)
 
 
 if __name__ == '__main__':
