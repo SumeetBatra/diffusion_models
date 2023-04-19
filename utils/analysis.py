@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from attrdict import AttrDict
 from autoencoders.policy.hypernet import HypernetAutoEncoder as VAE
 from collections import OrderedDict
-from ribs.archives import GridArchive
+from ribs.archives import GridArchive, CVTArchive
 from utils.brax_utils import rollout_many_agents
 from utils.archive_utils import archive_df_to_archive, reevaluate_ppga_archive, save_heatmap
 from utils.brax_utils import shared_params, rollout_many_agents, js_divergence
@@ -196,29 +196,9 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
     return results, image_results
 
 
-def classifier_free_guidance_hyperparameter_search():
-    '''
-    Evaluate the performance of the model over different values for classifier scale on points sampled from the archive
-    Sampling scheme: Divide the archive into 4 quadrants and uniformly sample k solutions from each quadrant.
-    :return: Average measure error in reconstructed policies
-    '''
-    classifier_scales = [0, 1, 2, 4, 8, 16]
-    env_name = 'walker2d'
+def initialize_all_models_and_archives(env_name):
     obs_shape, action_shape = shared_params[env_name]['obs_dim'], np.array(shared_params[env_name]['action_dim'])
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    # how many times to run this experiment. More trials = lower uncertainty
-    num_trials = 10
-
-    # number of random measures to sample
-    sample_size = 50
-    env_cfg = AttrDict({
-        'env_name': env_name,
-        'env_batch_size': 100 * sample_size,
-        'num_dims': 2,
-        'seed': 0,
-    })
-    vec_env = make_vec_env_brax(env_cfg)
 
     # init the archive
     archive_df_path = 'data/walker2d/archive_100x100.pkl'
@@ -256,17 +236,54 @@ def classifier_free_guidance_hyperparameter_search():
         cfg = json.load(f)
         cfg = AttrDict(cfg)
 
-    scale_factor = cfg.scale_factor
+    return archive_df, vae, model, sampler, cfg
 
-    def get_agents_with_measures(measures: torch.Tensor, classifier_scale, classifier_free_guidance=True, latent=False):
-        '''Sample policy with desired measure from the diffusion model'''
-        samples = sampler.sample(model, shape=[measures.shape[0], 4, 4, 4], cond=measures,
-                                classifier_free_guidance=classifier_free_guidance, classifier_scale=classifier_scale)
-        if latent:
-            return samples
-        samples = samples * (1 / scale_factor)
-        samples = vae.decode(samples)
+
+def get_agents_with_measures(sampler: DDIMSampler,
+                             model: ConditionalUNet,
+                             vae: VAE,
+                             measures: torch.Tensor,
+                             scale_factor: float,
+                             classifier_scale: float,
+                             classifier_free_guidance: bool = True,
+                             latent: bool = False):
+    '''Sample policy with desired measure from the diffusion model'''
+    samples = sampler.sample(model, shape=[measures.shape[0], 4, 4, 4], cond=measures,
+                            classifier_free_guidance=classifier_free_guidance, classifier_scale=classifier_scale)
+    if latent:
         return samples
+    samples = samples * (1 / scale_factor)
+    samples = vae.decode(samples)
+    return samples
+
+
+def classifier_free_guidance_hyperparameter_search():
+    '''
+    Evaluate the performance of the model over different values for classifier scale on points sampled from the archive
+    Sampling scheme: Divide the archive into 4 quadrants and uniformly sample k solutions from each quadrant.
+    :return: Average measure error in reconstructed policies
+    '''
+    classifier_scales = [0, 1, 2, 4, 8, 16]
+    env_name = 'walker2d'
+    obs_shape, action_shape = shared_params[env_name]['obs_dim'], np.array(shared_params[env_name]['action_dim'])
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # how many times to run this experiment. More trials = lower uncertainty
+    num_trials = 10
+
+    # number of random measures to sample
+    sample_size = 50
+    env_cfg = AttrDict({
+        'env_name': env_name,
+        'env_batch_size': 100 * sample_size,
+        'num_dims': 2,
+        'seed': 0,
+    })
+    vec_env = make_vec_env_brax(env_cfg)
+
+    archive_df, vae, model, sampler, cfg = initialize_all_models_and_archives(env_name)
+
+    scale_factor = cfg.scale_factor
 
     measures = torch.rand(2 * sample_size).reshape(sample_size, 2)
     measures = measures.to(device)
@@ -278,7 +295,7 @@ def classifier_free_guidance_hyperparameter_search():
             use_guidance = True
             if cs == 0:
                 use_guidance = False
-            agents = get_agents_with_measures(measures, cs, classifier_free_guidance=use_guidance)
+            agents = get_agents_with_measures(sampler, model, vae, measures, scale_factor, cs, classifier_free_guidance=use_guidance)
             for agent in agents:
                 agent.actor_logstd = nn.Parameter(torch.zeros(action_shape)).to(device)
 
@@ -313,6 +330,44 @@ def classifier_free_guidance_hyperparameter_search():
     plt.show()
 
 
+def evaluate_measure_distance_cvt():
+    num_cells = 50
+    env_name = 'walker2d'
+    archive_df, vae, model, sampler, cfg = initialize_all_models_and_archives(env_name)
+    scale_factor = cfg.scale_factor
+    env_cfg = AttrDict(shared_params[env_name]['env_cfg'])
+    env_cfg.seed = 0
+    env_cfg.env_batch_size = num_cells * 10
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    vec_env = make_vec_env_brax(env_cfg)
+
+    def compute_centroids():
+        solution_dim = archive_df.filter(regex='solution*').to_numpy().shape[1]
+        ranges = [(0.0, 1.0)] * env_cfg.num_dims
+
+        cvt_archive = CVTArchive(solution_dim=solution_dim,
+                                 cells=num_cells,
+                                 ranges=ranges,
+                                 seed=env_cfg.seed)
+        return cvt_archive.centroids
+
+    centroids = compute_centroids()
+    centroids = torch.from_numpy(centroids).to(torch.float32).to(device)
+
+    classifier_scale = 1.0
+    agents = get_agents_with_measures(sampler, model, vae, centroids, scale_factor, classifier_scale)
+    for agent in agents:
+        agent.actor_logstd = nn.Parameter(torch.zeros(shared_params[env_name]['action_dim'])).to(device)
+
+    rews, res_measures = rollout_many_agents(agents, env_cfg, vec_env, device)
+    measure_mse = nn.functional.mse_loss(centroids, res_measures).item()
+
+    gt_mean, gt_cov = centroids.mean(0).detach().cpu().numpy(), centroids.T.cov().detach().cpu().numpy()
+    res_mean, res_cov = res_measures.mean(0).detach().cpu().numpy(), res_measures.T.cov().detach().cpu().numpy()
+    js_div = js_divergence(gt_mean, gt_cov, res_mean, res_cov)
+
+    print(f'{measure_mse=}, {js_div=}')
 
 
 if __name__ == '__main__':
@@ -324,4 +379,4 @@ if __name__ == '__main__':
     env_name = 'halfcheetah'
 
     # evaluate_vae_subsample(env_name, archive_df_path, model_path)
-    classifier_free_guidance_hyperparameter_search()
+    evaluate_measure_distance_cvt()
