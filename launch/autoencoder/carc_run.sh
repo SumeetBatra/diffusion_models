@@ -2,9 +2,9 @@
 #SBATCH --account=gaurav_1048
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:v100:1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=10
 #SBATCH --mem-per-cpu=4G
-#SBATCH --time=06:00:00
+#SBATCH --time=12:00:00
 #SBATCH --output=tmp/dm-%j.log
 #SBATCH --nodes=1
 #SBATCH --ntasks=3
@@ -21,21 +21,21 @@ su_charge=$(scontrol show job $SLURM_JOB_ID -dd | grep -oP '(?<=billing=).*(?=,g
 echo "estimated max su charge $su_charge"
 
 
-tags=plabl2
+group=sizeabl1
 
-# pl=0
+# gh=64
 
-# pl=0.01
+# gh=32
 
-# pl=0.05
+# gh=16
 
-pl=0.1
+gh=8
+
 
 
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
 for seed in 123 456 789; do
-    srun --cpus-per-task=8 python -m algorithm.train_autoencoder --env_name halfcheetah --use_wandb True --num_epochs 200 --wandb_tag $tags --perceptual_loss $pl  --seed $seed &
+    srun --ntasks=1 --cpus-per-task=$SLURM_CPUS_PER_TASK python -m algorithm.train_autoencoder --env_name halfcheetah --use_wandb True --num_epochs 200 --wandb_group $group --ghn_hid $pl --seed $seed &
 done
-
 wait
