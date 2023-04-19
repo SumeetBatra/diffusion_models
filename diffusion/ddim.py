@@ -84,7 +84,7 @@ class DDIMSampler():
                  classifier_scale: int = 1.0):
         e_t = model(x, t, c)
         if classifier_free_guidance:
-            e_t = (1.0 + classifier_scale) * e_t - classifier_scale * model(x, t, c=None)
+            e_t = (1.0 + classifier_scale) * e_t - classifier_scale * model(x, t, cond=None)
 
         x_prev, pred_x0 = self.get_x_prev_and_pred_x0(e_t, index, x, temperature=temperature, repeat_noise=repeat_noise)
         return x_prev, pred_x0, e_t

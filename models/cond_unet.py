@@ -7,7 +7,7 @@ import torch.nn as nn
 
 from models.attention import SpatialTransformer
 from models.unet import SinusoidalPositionEmbeddings
-from typing import List
+from typing import List, Optional
 
 
 def normalization(channels):
@@ -180,10 +180,11 @@ class ConditionalUNet(nn.Module):
             nn.Conv2d(channels, out_channels, 3, padding=1)
         )
 
-    def forward(self, x: torch.Tensor, time_steps: torch.Tensor, cond: torch.Tensor):
+    def forward(self, x: torch.Tensor, time_steps: torch.Tensor, cond: Optional[torch.Tensor] = None):
         x_input_block = []
         t_emb = self.time_embed(time_steps)
-        cond = self.cond_embed(cond)[:, None, :]
+        if cond is not None:
+            cond = self.cond_embed(cond)[:, None, :]
 
         for module in self.input_blocks:
             x = module(x, t_emb, cond)
