@@ -419,7 +419,8 @@ def train_autoencoder():
                 })
 
                 wandb.log(info)
-                wandb.log({'Archive/recon_image': wandb.Image(image_results['Reconstructed'], caption=f"Epoch {epoch + 1}")})
+                if args.reevaluate_archive_vae:
+                    wandb.log({'Archive/recon_image': wandb.Image(image_results['Reconstructed'], caption=f"Epoch {epoch + 1}")})
 
         epoch_mse_loss = 0
         epoch_kl_loss = 0
