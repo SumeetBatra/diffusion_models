@@ -64,6 +64,7 @@ def parse_args():
     parser.add_argument('--conditional', type=lambda x: bool(strtobool(x)), default=False)
     # misc
     parser.add_argument('--reevaluate_archive_vae', type=lambda x: bool(strtobool(x)), default=True, help='Evaluate the VAE on the entire archive every 50 epochs')
+    parser.add_argument('--load_from_checkpoint', type=str, default=None, help='Load an existing model from a checkpoint for additional training')
 
     args = parser.parse_args()
     return args
@@ -330,6 +331,10 @@ def train_autoencoder():
                                 conditional=args.conditional,
                                 ghn_hid=args.ghn_hid,
                                 )
+
+    if args.load_from_checkpoint is not None:
+        log.info(f'Loading an existing model saved at {args.load_from_checkpoint}')
+        model.load_state_dict(torch.load(args.load_from_checkpoint))
     model.to(device)
 
     obs_shape, action_shape = obs_dim, action_shape = shared_params[args.env_name]['obs_dim'], np.array([shared_params[args.env_name]['action_dim']])
