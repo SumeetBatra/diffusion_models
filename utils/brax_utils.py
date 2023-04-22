@@ -6,7 +6,6 @@ from collections import OrderedDict
 from RL.actor_critic import Actor
 from utils.utilities import log
 from RL.vectorized import VectorizedActor
-from scipy.stats import multivariate_normal
 
 
 shared_params = OrderedDict({
@@ -92,7 +91,7 @@ def kl_divergence(mu1, cov1, mu2, cov2):
     # calculate KL divergence using formula
     kl_div = 0.5 * (np.trace(np.linalg.inv(cov2).dot(cov1)) +
                     np.dot((mu2 - mu1).T, np.dot(np.linalg.inv(cov2), (mu2 - mu1))) -
-                    len(mu1) + np.log(np.linalg.det(cov2) / np.linalg.det(cov1)))
+                    len(mu1) + np.log(np.linalg.det(cov2) / (np.linalg.det(cov1) + 1e-9)))
 
     return kl_div
 
@@ -150,6 +149,32 @@ def rollout_agent(agent: Actor, env_cfg, vec_env, device, deterministic=True):
     return total_reward, measures
 
 
+def calculate_statistics(gt_rews, gt_measures, rec_rewards, rec_measures): 
+    '''
+    Calculate various statistics based on batches of rewards and measures evaluated from the ground truth 
+    and reconstructed policies
+    '''
+    gt_mean, gt_cov = gt_measures.mean(0), np.cov(gt_measures.T)
+    rec_mean, rec_cov = rec_measures.mean(0), np.cov(rec_measures.T)
+    js_div = js_divergence(gt_mean, gt_cov, rec_mean, rec_cov)
+
+    ttest_res = stats.ttest_ind(gt_measures, rec_measures, equal_var=False)
+
+    return {
+        'js_div': js_div,
+        't_test': ttest_res,
+        'measure_mse': np.square(gt_measures.mean(0) - rec_measures.mean(0)),
+
+        'Rewards/original': gt_rews.mean().item(),
+        'Measures/original_mean': gt_measures.mean(axis=0),
+        'Measures/original_std': gt_measures.std(axis=0),
+
+        'Rewards/reconstructed': rec_rewards.mean().item(),
+        'Measures/reconstructed_mean': rec_measures.mean(axis=0),
+        'Measures/reconstructed_std': rec_measures.std(axis=0),
+    }
+
+
 def compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, vec_env, device, deterministic=True):
     # get a ground truth policy and evaluate it. Then get the reconstructed policy and compare its
     # performance and behavior to the ground truth
@@ -161,31 +186,13 @@ def compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, vec_env, device, dete
     rec_rewards, rec_measures = rollout_agent(rec_agent, env_cfg, vec_env, device, deterministic)
     # log.debug(f'Reconstructed Agent -- Reward: {rec_rewards.mean().item()} +/- {rec_rewards.std().item()}, '
             #   f'\n Measures: {rec_measures.mean(dim=0).detach().cpu().numpy()} +/- {rec_measures.mean(dim=0).std().detach().cpu().numpy()}')
+    
+    stats = calculate_statistics(gt_rewards.detach().cpu().numpu(), 
+                                 gt_measures.detach().cpu().numpy(),
+                                 rec_rewards.detach().cpu().numpy(),
+                                 rec_measures.detach().cpu().numpy())
 
-    ttest_res = stats.ttest_ind(gt_measures.detach().cpu().numpy(), rec_measures.detach().cpu().numpy(), equal_var=False)
-
-    # fit a gaussian to the measures of the original policy and another one for those of the reconstructed policy
-    # and compute the KL divergence between the two
-    gt_mean = gt_measures.detach().cpu().numpy().mean(0)
-    gt_cov = np.cov(gt_measures.detach().cpu().numpy().T)
-
-    rec_mean = rec_measures.detach().cpu().numpy().mean(0)
-    rec_cov = np.cov(rec_measures.detach().cpu().numpy().T)
-
-    js_div = js_divergence(gt_mean, gt_cov, rec_mean, rec_cov)
-    return {
-            'js_div': js_div,
-            't_test': ttest_res,
-            'measure_mse': torch.square(gt_measures.mean(0) - rec_measures.mean(0)).detach().cpu().numpy(),
-            
-            'Rewards/original': gt_rewards.mean().item(),
-            'Measures/original_mean': gt_measures.mean(dim=0).detach().cpu().numpy(),
-            'Measures/original_std': gt_measures.std(dim=0).detach().cpu().numpy(),
-            
-            'Rewards/reconstructed': rec_rewards.mean().item(),
-            'Measures/reconstructed_mean': rec_measures.mean(dim=0).detach().cpu().numpy(),
-            'Measures/reconstructed_std': rec_measures.std(dim=0).detach().cpu().numpy(),
-            }
+    return stats 
 
 
 def rollout_many_agents(agents: list[Actor], env_cfg, vec_env, device, deterministic=True, verbose=True):
@@ -262,4 +269,4 @@ def rollout_many_agents(agents: list[Actor], env_cfg, vec_env, device, determini
         log.info(f'Mean Reward across all agents: {mean_reward}')
         log.info(f'Average Trajectory Length: {mean_traj_length}')
 
-    return total_reward.reshape(-1, ), measures.reshape(-1, env_cfg.num_dims)
+    return total_reward.reshape(-1, ), measures.reshape(-1, env_cfg.num_dims).detach().cpu().numpy()

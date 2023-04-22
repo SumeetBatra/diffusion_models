@@ -109,7 +109,8 @@ def evaluate(vec_agent, vec_env, num_dims, use_action_means=True, normalize_obs=
 
     # the first done in each env is where that trajectory ends
     traj_lengths = torch.argmax(all_dones, dim=0) + 1
-    avg_traj_lengths = traj_lengths.to(torch.float32).reshape((vec_agent.num_models, vec_env.num_envs // vec_agent.num_models)).mean(dim=1).cpu().numpy()
+    avg_traj_lengths = traj_lengths.to(torch.float32).reshape(
+        (vec_agent.num_models, vec_env.num_envs // vec_agent.num_models)).mean(dim=1).cpu().numpy()
     # TODO: figure out how to vectorize this
     for i in range(vec_env.num_envs):
         measures[i] = measures_acc[:traj_lengths[i], i].sum(dim=0) / traj_lengths[i]
@@ -141,7 +142,9 @@ def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, de
 
     return rec_agents
 
-def reconstruct_agents_from_ldm(original_agents, original_measures, vae: nn.Module, device, sampler, scale_factor, diffusion_model):
+
+def reconstruct_agents_from_ldm(original_agents, original_measures, vae: nn.Module, device, sampler, scale_factor,
+                                diffusion_model):
     batch_size = len(original_measures)
     original_measures = torch.tensor(original_measures).reshape(batch_size, -1).to(device).to(torch.float32)
     samples = sampler.sample(diffusion_model, shape=[batch_size, 4, 4, 4], cond=original_measures)
@@ -153,7 +156,7 @@ def reconstruct_agents_from_ldm(original_agents, original_measures, vae: nn.Modu
             rec_agent.obs_normalizer = orig_agent.obs_normalizer
 
     return rec_agents
-    
+
 
 def reevaluate_ppga_archive(env_cfg: AttrDict,
                             normalize_obs: bool,
@@ -162,9 +165,9 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                             solution_batch_size: int = 100,
                             reconstructed_agents: bool = False,
                             vae: nn.Module = None,
-                            sampler = None,
-                            scale_factor = None,
-                            diffusion_model = None,
+                            sampler=None,
+                            scale_factor=None,
+                            diffusion_model=None,
                             save_path=None):
     num_sols = len(original_archive)
     print(f'{num_sols=}')
@@ -176,7 +179,7 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
 
     if vae is not None:
         vae.to(device)
-    
+
     if diffusion_model is not None:
         diffusion_model.to(device)
 
@@ -187,7 +190,8 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
     agents = []
     measures_list = []
     for elite in original_archive:
-        agent = Actor(obs_shape[0], action_shape, normalize_obs, normalize_returns).deserialize(elite.solution).to(device)
+        agent = Actor(obs_shape[0], action_shape, normalize_obs, normalize_returns).deserialize(elite.solution).to(
+            device)
         if normalize_obs:
             obs_norm = elite.metadata['obs_normalizer']
             if isinstance(obs_norm, dict):
@@ -208,15 +212,17 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
             if diffusion_model is None:
                 agent_batch = reconstruct_agents_from_vae(agent_batch, vae, device)
             else:
-                agent_batch = reconstruct_agents_from_ldm(agent_batch, measure_batch, vae, device, sampler, scale_factor, diffusion_model)
-        
+                agent_batch = reconstruct_agents_from_ldm(agent_batch, measure_batch, vae, device, sampler,
+                                                          scale_factor, diffusion_model)
+
         if env_cfg.env_batch_size % len(agent_batch) != 0 and len(original_archive) % solution_batch_size != 0:
             del vec_env
             env_cfg.env_batch_size = len(agent_batch) * 50
             vec_env = make_vec_env_brax(env_cfg)
         print(f'Evaluating solution batch {i}')
         vec_inference = VectorizedActor(agent_batch, Actor, obs_shape=obs_shape, action_shape=action_shape,
-                                        normalize_obs=normalize_obs, normalize_returns=normalize_returns, deterministic=True).to(device)
+                                        normalize_obs=normalize_obs, normalize_returns=normalize_returns,
+                                        deterministic=True).to(device)
         objs, measures, metadata = evaluate(vec_inference, vec_env, env_cfg.num_dims, normalize_obs=normalize_obs)
         all_objs.append(objs)
         all_measures.append(measures)
@@ -257,12 +263,18 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
     return new_archive
 
 
-def archive_df_to_archive(archive_df: pandas.DataFrame, **kwargs):
+def archive_df_to_archive(archive_df: pandas.DataFrame, type: str = 'grid', **kwargs):
+    if type == 'grid':
+        archive_fn = GridArchive
+    elif type == 'cvt':
+        archive_fn = CVTArchive
+    else:
+        raise NotImplementedError
     solution_batch = archive_df.filter(regex='solution*').to_numpy()
     measures_batch = archive_df.filter(regex='measure*').to_numpy()
     obj_batch = archive_df.filter(regex='objective').to_numpy().flatten()
     metadata_batch = archive_df.filter(regex='metadata').to_numpy().flatten()
-    archive = GridArchive(**kwargs)
+    archive = archive_fn(**kwargs)
     archive.add(solution_batch, obj_batch, measures_batch, metadata_batch)
     return archive
 
@@ -280,7 +292,8 @@ def sample_agents_from_archive(env_cfg, archive_df):
         sols = quad.filter(regex='solution*')
         md = quad['metadata'].to_numpy()
         for i, sol in enumerate(sols):
-            agent = Actor(env_cfg.obs_shape, env_cfg.action_shape, normalize_obs=True, normalize_returns=False).deserialize(sol)
+            agent = Actor(env_cfg.obs_shape, env_cfg.action_shape, normalize_obs=True,
+                          normalize_returns=False).deserialize(sol)
             agent.to(device)
             agent.obs_normalizer.load_state_dict(md[i]['obs_normalizer'])
             agents.append(agent)

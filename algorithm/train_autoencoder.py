@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import os
 import pickle
+import pandas
 import glob
 import torch.nn.functional as F
 
@@ -17,8 +18,9 @@ from autoencoders.policy.hypernet import HypernetAutoEncoder, ModelEncoder
 from RL.actor_critic import Actor
 from envs.brax_custom.brax_env import make_vec_env_brax
 from attrdict import AttrDict
-from utils.brax_utils import compare_rec_to_gt_policy, shared_params
+from utils.brax_utils import compare_rec_to_gt_policy, shared_params, rollout_many_agents, calculate_statistics
 from utils.utilities import log, config_wandb
+from utils.archive_utils import archive_df_to_archive
 from functools import partial
 from losses.contperceptual import LPIPS
 from utils.analysis import evaluate_vae_subsample
@@ -86,62 +88,54 @@ def evaluate_agent_quality(env_cfg: dict,
                            inp_coef: float,
                            device: str,
                            normalize_obs: bool = False):
-    avg_measure_mse = 0
-    avg_t_test = 0
-    avg_orig_reward = 0
-    avg_reconstructed_reward = 0
-    avg_std_orig_measure = 0
-    avg_std_rec_measure = 0
-    avg_js_div = 0
 
     obs_dim = vec_env.single_observation_space.shape[0]
     action_shape = vec_env.single_action_space.shape
 
+    # load all relevant data for ground truth and reconstructed agents
+    gt_agents, rec_agents = [], []
     for k in range(test_batch_size):
-        gt_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs)
-        rec_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs)
-        rec_agent.actor_mean = rec_policies[k]
+        gt_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device)
+        rec_agent = rec_policies[k].to(device)
+        rec_agent.obs_normalizer = gt_agent.obs_normalizer
+        rec_agent.actor_logstd = gt_agent.actor_logstd
 
         actor_weights = {key: gt_params_batch[key][k] for key in gt_params_batch.keys() if 'actor' in key}
         recon_actor_weights = rec_agent.state_dict()
 
-        if normalize_obs:
-            # TODO: should remove obs_norms since we are using global obs norm now
-            # TODO: or keep it if gloabl obs norm doesn't work for humanoid
-            norm_dict = {'obs_normalizer.' + key: obs_norms[key][k] for key in obs_norms.keys()}
-            actor_weights.update(norm_dict)
-            recon_actor_weights.update(norm_dict)
-
-        # TODO: we should get rid of this if we don't need it anymore
-        # TODO: This lets keep for a few core commits
         actor_weights['actor_mean.0.weight'] *= (1 / inp_coef)
         actor_weights['actor_mean.0.bias'] *= (1 / inp_coef)
-        recon_actor_weights['actor_mean.actor_mean.0.weight'] *= (1 / inp_coef)
-        recon_actor_weights['actor_mean.actor_mean.0.bias'] *= (1 / inp_coef)
+        recon_actor_weights['actor_mean.0.weight'] *= (1 / inp_coef)
+        recon_actor_weights['actor_mean.0.bias'] *= (1 / inp_coef)
+
+        if normalize_obs:
+            gt_norm_dict = {'obs_normalizer.' + key: obs_norms[key][k] for key in obs_norms.keys()}
+            std_norm_dict = {key: obs_norms[key][k] for key in obs_norms.keys()}
+            actor_weights.update(gt_norm_dict)
+            gt_agent.obs_normalizer.load_state_dict(std_norm_dict)
+            rec_agent.obs_normalizer.load_state_dict(std_norm_dict)
 
         gt_agent.load_state_dict(actor_weights)
         rec_agent.load_state_dict(recon_actor_weights)
 
-        gt_agent.to(device)
-        rec_agent.to(device)
+        gt_agents.append(gt_agent)
+        rec_agents.append(rec_agent)
 
-        info = compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, vec_env, device, deterministic=True)
+    # batch-evaluate the ground-truth agents
+    gt_rewards, gt_measures = rollout_many_agents(gt_agents, env_cfg, vec_env, device)
 
-        avg_measure_mse += info['measure_mse']
-        avg_t_test += info['t_test'].pvalue
-        avg_orig_reward += info['Rewards/original']
-        avg_reconstructed_reward += info['Rewards/reconstructed']
-        avg_js_div += info['js_div']
-        avg_std_orig_measure += info['Measures/original_std']
-        avg_std_rec_measure += info['Measures/reconstructed_std']
+    # batch-evaluate the reconstructed agents
+    rec_rewards, rec_measures = rollout_many_agents(rec_agents, env_cfg, vec_env, device)
 
-    avg_measure_mse /= test_batch_size
-    avg_t_test /= test_batch_size
-    avg_orig_reward /= test_batch_size
-    avg_reconstructed_reward /= test_batch_size
-    avg_js_div /= test_batch_size
-    avg_std_orig_measure /= test_batch_size
-    avg_std_rec_measure /= test_batch_size
+    # calculate statistics based on results
+    info = calculate_statistics(gt_rewards, gt_measures, rec_rewards, rec_measures)
+    avg_measure_mse = info['measure_mse']
+    avg_t_test = info['t_test'].pvalue
+    avg_orig_reward = info['Rewards/original']
+    avg_reconstructed_reward = info['Rewards/reconstructed']
+    avg_js_div = info['js_div']
+    avg_std_orig_measure = info['Measures/original_std']
+    avg_std_rec_measure = info['Measures/reconstructed_std']
 
     reward_ratio = avg_reconstructed_reward / avg_orig_reward
 
@@ -166,34 +160,6 @@ def evaluate_agent_quality(env_cfg: dict,
     return final_info
 
 
-def dataset_factory():
-    archive_data_path = 'data/walker2d'
-    archive_dfs = []
-
-    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100*.pkl')
-    for path in archive_df_paths:
-        log.debug(f'loading {path=}')
-        with open(path, 'rb') as f:
-            archive_df = pickle.load(f)
-            archive_dfs.append(archive_df)
-
-    scheduler_dfs = []
-
-    scheduler_df_paths = glob.glob(archive_data_path + '/scheduler*100x100*.pkl')
-    for path in scheduler_df_paths:
-        with open(path, 'rb') as f:
-            scheduler_df = pickle.load(f)
-            scheduler_dfs.append(scheduler_df)
-
-    mlp_shape = (128, 128, 6)
-
-    dummy_agent = Actor(obs_shape=18, action_shape=np.array([6]))
-
-    elite_dataset = ElitesDataset(archive_dfs, mlp_shape, dummy_agent)
-
-    return DataLoader(elite_dataset, batch_size=32, shuffle=True)
-
-
 def shaped_elites_dataset_factory(env_name, merge_obsnorm = True, batch_size=32, is_eval=False, inp_coef=0.25):
     archive_data_path = f'data/{env_name}'
     archive_dfs = []
@@ -209,6 +175,21 @@ def shaped_elites_dataset_factory(env_name, merge_obsnorm = True, batch_size=32,
 
     obs_dim, action_shape = shared_params[env_name]['obs_dim'], np.array([shared_params[env_name]['action_dim']])
 
+    if is_eval:
+        archive_df = pandas.concat(archive_dfs)
+        # compute a lower dimensional cvt archive from the original dataset
+        soln_dim = archive_df.filter(regex='solution*').to_numpy().shape[1]
+        cells = batch_size
+        ranges = [(0.0, 1.0)] * shared_params[env_name]['env_cfg']['num_dims']
+        cvt_archive = archive_df_to_archive(archive_df,
+                                            type='cvt',
+                                            solution_dim=soln_dim,
+                                            cells=cells,
+                                            ranges=ranges)
+        # overload the archive_dfs variable with the new archive_df containing only solutions corresponding to the
+        # centroids
+        archive_dfs = [cvt_archive.as_pandas(include_solutions=True, include_metadata=True)]
+
     s_elite_dataset = ShapedEliteDataset(archive_dfs,
                                          obs_dim=obs_dim,
                                          action_shape=action_shape,
@@ -220,22 +201,6 @@ def shaped_elites_dataset_factory(env_name, merge_obsnorm = True, batch_size=32,
                                          )
 
     return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs
-
-
-def mse_loss_from_unpadded_params(policy_in_tensors, rec_agents):
-    bs = policy_in_tensors.shape[0]
-
-    # convert reconstructed actors to params tensor
-    rec_params = np.array([agent.serialize() for agent in rec_agents])
-    rec_params = torch.from_numpy(rec_params).reshape(bs, -1)
-
-    mlp_shape = (128, 128, 6)
-    dummy_agent = Actor(obs_shape=18, action_shape=np.array([6]))
-    # first convert the data from padded -> unpadded params tensors
-    params_numpy = np.array([postprocess_model(dummy_agent, tensor, mlp_shape, return_model=False, deterministic=True) for tensor in policy_in_tensors])
-    gt_actor_params = torch.from_numpy(params_numpy).reshape(bs, -1)
-
-    return F.mse_loss(gt_actor_params, rec_params)
 
 
 def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor]):
@@ -359,22 +324,20 @@ def train_autoencoder():
 
     mse_loss_func = mse_loss_from_weights_dict
 
-
-    train_batch_size, test_batch_size = 32, 8
+    train_batch_size, test_batch_size = 32, 50
     dataloader, train_archive = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=train_batch_size, \
                                                is_eval=False, inp_coef=args.inp_coef)
     test_dataloader, test_archive = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=test_batch_size, \
                                                 is_eval=True,  inp_coef=args.inp_coef)
     inp_coef = dataloader.dataset.inp_coef
 
+    rollouts_per_agent = 10  # to align ourselves with baselines
     if args.track_agent_quality:
         env_cfg = AttrDict({
             'env_name': args.env_name,
-            'env_batch_size': 100,
-            'num_dims': 2,
-            'envs_per_model': 1,
+            'env_batch_size': test_batch_size * rollouts_per_agent,
+            'num_dims': shared_params[args.env_name]['env_cfg']['num_dims'],
             'seed': 0,
-            'num_envs': 100,
         })
 
         env = make_vec_env_brax(env_cfg)
