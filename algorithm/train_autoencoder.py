@@ -7,21 +7,16 @@ import glob
 import torch.nn.functional as F
 
 from distutils.util import strtobool
-from pathlib import Path
 from torch.optim import Adam
 from dataset.shaped_elites_dataset import ShapedEliteDataset
-from dataset.tensor_elites_dataset import ElitesDataset, postprocess_model
 from torch.utils.data import DataLoader
-from autoencoders.policy.resnet3d import ResNet3DAutoEncoder
-from autoencoders.policy.transformer import TransformerPolicyAutoencoder
 from autoencoders.policy.hypernet import HypernetAutoEncoder, ModelEncoder
 from RL.actor_critic import Actor
 from envs.brax_custom.brax_env import make_vec_env_brax
 from attrdict import AttrDict
-from utils.brax_utils import compare_rec_to_gt_policy, shared_params, rollout_many_agents, calculate_statistics
+from utils.brax_utils import shared_params, rollout_many_agents, calculate_statistics
 from utils.utilities import log, config_wandb
 from utils.archive_utils import archive_df_to_archive
-from functools import partial
 from losses.contperceptual import LPIPS
 from utils.analysis import evaluate_vae_subsample
 
