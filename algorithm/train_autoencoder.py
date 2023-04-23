@@ -117,10 +117,10 @@ def evaluate_agent_quality(env_cfg: dict,
         rec_agents.append(rec_agent)
 
     # batch-evaluate the ground-truth agents
-    gt_rewards, gt_measures = rollout_many_agents(gt_agents, env_cfg, vec_env, device)
+    gt_rewards, gt_measures = rollout_many_agents(gt_agents, env_cfg, vec_env, device, normalize_obs = normalize_obs)
 
     # batch-evaluate the reconstructed agents
-    rec_rewards, rec_measures = rollout_many_agents(rec_agents, env_cfg, vec_env, device)
+    rec_rewards, rec_measures = rollout_many_agents(rec_agents, env_cfg, vec_env, device, normalize_obs = normalize_obs)
 
     # calculate statistics based on results
     info = calculate_statistics(gt_rewards, gt_measures, rec_rewards, rec_measures)

@@ -39,6 +39,7 @@ class ShapedEliteDataset(Dataset):
         self.measures_list = archive_df.filter(regex='measure*').to_numpy()
         self.metadata = archive_df.filter(regex='metadata*').to_numpy()
         self.normalize_obs = normalize_obs
+        self.objective_list = archive_df['objective'].to_numpy()
 
         elites_list = archive_df.filter(regex='solution*').to_numpy()
 
@@ -49,6 +50,7 @@ class ShapedEliteDataset(Dataset):
             elites_list = elites_list[indices]
             self.measures_list = self.measures_list[indices]
             self.metadata = self.metadata[indices]
+            self.objective_list = self.objective_list[indices]
 
         self.weight_dicts_list, self.obsnorm_list = self._params_to_weight_dicts(elites_list)
 

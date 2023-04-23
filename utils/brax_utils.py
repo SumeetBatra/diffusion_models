@@ -195,7 +195,7 @@ def compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, vec_env, device, dete
     return stats 
 
 
-def rollout_many_agents(agents: list[Actor], env_cfg, vec_env, device, deterministic=True, verbose=True):
+def rollout_many_agents(agents: list[Actor], env_cfg, vec_env, device, deterministic=True, verbose=True, normalize_obs = False):
     '''
     Evaluate multiple agents multiple times
     :returns: Sum rewards and average measures for all agents
@@ -204,10 +204,12 @@ def rollout_many_agents(agents: list[Actor], env_cfg, vec_env, device, determini
 
     assert vec_env.num_envs % len(agents) == 0, 'The num_envs parameter must be a multiple of the number of agents'
 
-    normalize_obs = False
+    num_envs_per_agent = vec_env.num_envs // len(agents)
+
+    # normalize_obs = False
     obs_shape = vec_env.single_observation_space.shape
 
-    vec_agent = VectorizedActor(agents, Actor, normalize_obs=normalize_obs, obs_shape=obs_shape, normalize_returns=False)
+    vec_agent = VectorizedActor(agents, Actor, normalize_obs=False, obs_shape=obs_shape, normalize_returns=False)
 
     total_reward = np.zeros(vec_env.num_envs)
     traj_length = 0
@@ -221,11 +223,8 @@ def rollout_many_agents(agents: list[Actor], env_cfg, vec_env, device, determini
     measures = torch.zeros((vec_env.num_envs, env_cfg.num_dims)).to(device)
 
     if normalize_obs:
-        # stack all the obs means and vars from all policies
-        obs_means = np.array([agent.obs_normalizer.obs_rms.mean for agent in agents])
-        obs_vars = np.array([agent.obs_normalizer.obs_rms.var for agent in agents])
-        obs_means = torch.from_numpy(obs_means).to(device)
-        obs_vars = torch.from_numpy(obs_vars).to(device)
+        obs_means = torch.cat([agent.obs_normalizer.obs_rms.mean.repeat(num_envs_per_agent,1) for agent in agents]).to(device)
+        obs_vars = torch.cat([agent.obs_normalizer.obs_rms.var.repeat(num_envs_per_agent,1) for agent in agents]).to(device)
 
     while not torch.all(dones):
         with torch.no_grad():
