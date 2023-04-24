@@ -51,6 +51,57 @@ class ShapedEliteDataset(Dataset):
             self.metadata = self.metadata[indices]
 
         self.weight_dicts_list, self.obsnorm_list = self._params_to_weight_dicts(elites_list)
+        
+        if not self.is_eval:
+            # normalize the weights and biases
+            self.weight_mean_dict = {}
+            self.weight_std_dict = {}
+            
+            for key, value in self.weight_dicts_list[0].items():
+                self.weight_mean_dict[key] = torch.cat([weight_dicts[key] for weight_dicts in self.weight_dicts_list]).mean(0).to(self.device)
+                self.weight_std_dict[key] = torch.cat([weight_dicts[key] for weight_dicts in self.weight_dicts_list]).std(0).to(self.device)
+            
+            for weight_dicts in self.weight_dicts_list:
+                for key, value in weight_dicts.items():
+                    weight_dicts[key] = (value - self.weight_mean_dict[key]) / self.weight_std_dict[key]
+        
+            self.postnorm_weight_mean_dict = {}
+            self.postnorm_weight_std_dict = {}
+            for key, value in self.weight_dicts_list[0].items():
+                self.postnorm_weight_mean_dict[key] = torch.cat([weight_dicts[key] for weight_dicts in self.weight_dicts_list]).mean(0).to(self.device)
+                self.postnorm_weight_std_dict[key] = torch.cat([weight_dicts[key] for weight_dicts in self.weight_dicts_list]).std(0).to(self.device)
+    
+
+    def set_weight_norm(self, weight_mean_dict, weight_std_dict):
+        self.weight_mean_dict = weight_mean_dict
+        self.weight_std_dict = weight_std_dict
+
+        for weight_dicts in self.weight_dicts_list:
+            for key, value in weight_dicts.items():
+                weight_dicts[key] = (value - self.weight_mean_dict[key]) / self.weight_std_dict[key]
+
+        self.postnorm_weight_mean_dict = {}
+        self.postnorm_weight_std_dict = {}
+        for key, value in self.weight_dicts_list[0].items():
+            self.postnorm_weight_mean_dict[key] = torch.cat([weight_dicts[key] for weight_dicts in self.weight_dicts_list]).mean(0).to(self.device)
+            self.postnorm_weight_std_dict[key] = torch.cat([weight_dicts[key] for weight_dicts in self.weight_dicts_list]).std(0).to(self.device)
+
+
+    def denormalize_weights(self, weights_dict):
+        if type(weights_dict) == list:
+            for weight_dict_ in weights_dict:
+                for key, value in weight_dict_.items():
+                    weight_dict_[key] = value * self.weight_std_dict[key] + self.weight_mean_dict[key]
+            return weights_dict
+        else:
+            for key, value in weights_dict.items():
+                weights_dict[key] = value * self.weight_std_dict[key] + self.weight_mean_dict[key]
+            return weights_dict
+
+
+
+        
+
 
     def __len__(self):
         return len(self.weight_dicts_list)

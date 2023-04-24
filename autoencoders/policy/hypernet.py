@@ -86,6 +86,20 @@ class HypernetAutoEncoder(AutoEncoderBase):
         # Decode the image of shape `[batch_size, channels, height, width]`
         return self.decoder([self.dummy_actor() for _ in range(z.shape[0])], z, y)
 
+    # HACK FOR TESTNG, DELETE ASAP
+    # THIS SETS THE OUTPUT TO MATCH THE INPUT
+    # def forward(self, x: torch.Tensor, y: torch.Tensor = None):
+    #     if x is None:
+    #         posterior = self.random_sample(x, y)
+    #     else:
+    #         posterior = self.encode(x, y)
+    #     z = posterior.sample()
+    #     out = self.decode(z, y)
+    #     for i,out_ in enumerate(out):
+    #         sd = {key: value[i] for key, value in x.items() if key != 'actor_logstd'}
+    #         out[i].load_state_dict(sd)
+            
+    #     return out, posterior
 
 class ModelEncoder(nn.Module):
     def __init__(self, obs_shape, action_shape, emb_channels, z_channels, obs_norm=False, z_height=4,

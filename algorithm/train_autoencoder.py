@@ -85,7 +85,8 @@ def evaluate_agent_quality(env_cfg: dict,
                            test_batch_size: int,
                            inp_coef: float,
                            device: str,
-                           normalize_obs: bool = False):
+                           normalize_obs: bool = False,
+                           denormalizer = None):
     avg_measure_mse = 0
     avg_t_test = 0
     avg_orig_reward = 0
@@ -98,12 +99,15 @@ def evaluate_agent_quality(env_cfg: dict,
     action_shape = vec_env.single_action_space.shape
 
     for k in range(test_batch_size):
-        gt_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs)
-        rec_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs)
-        rec_agent.actor_mean = rec_policies[k]
+        gt_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs, deterministic=True)
+        rec_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs, deterministic=True)
+        # rec_agent.actor_mean = rec_policies[k]
 
         actor_weights = {key: gt_params_batch[key][k] for key in gt_params_batch.keys() if 'actor' in key}
-        recon_actor_weights = rec_agent.state_dict()
+        recon_actor_weights = rec_policies[k].state_dict()
+
+        denormalizer(actor_weights)
+        denormalizer(recon_actor_weights)
 
         if normalize_obs:
             # TODO: should remove obs_norms since we are using global obs norm now
@@ -116,8 +120,10 @@ def evaluate_agent_quality(env_cfg: dict,
         # TODO: This lets keep for a few core commits
         actor_weights['actor_mean.0.weight'] *= (1 / inp_coef)
         actor_weights['actor_mean.0.bias'] *= (1 / inp_coef)
-        recon_actor_weights['actor_mean.actor_mean.0.weight'] *= (1 / inp_coef)
-        recon_actor_weights['actor_mean.actor_mean.0.bias'] *= (1 / inp_coef)
+        recon_actor_weights['actor_mean.0.weight'] *= (1 / inp_coef)
+        recon_actor_weights['actor_mean.0.bias'] *= (1 / inp_coef)
+
+        actor_weights.pop('actor_logstd', None)
 
         gt_agent.load_state_dict(actor_weights)
         rec_agent.load_state_dict(recon_actor_weights)
@@ -366,6 +372,9 @@ def train_autoencoder():
     test_dataloader, test_archive = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=test_batch_size, \
                                                 is_eval=True,  inp_coef=args.inp_coef)
     inp_coef = dataloader.dataset.inp_coef
+    weights_denormalizer = dataloader.dataset.denormalize_weights
+    test_dataloader.dataset.set_weight_norm(dataloader.dataset.weight_mean_dict, dataloader.dataset.weight_std_dict)
+
 
     if args.track_agent_quality:
         env_cfg = AttrDict({
@@ -394,14 +403,14 @@ def train_autoencoder():
             else:
                 rec_policies, _ = model(gt_params)
 
-            info = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, inp_coef, device, normalize_obs=not args.merge_obsnorm)
+            info = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, inp_coef, device, normalize_obs=not args.merge_obsnorm, denormalizer=weights_denormalizer)
 
             
             # now try to sample a policy with just measures
             if args.conditional:
                 rec_policies, _ = model(None, gt_measure)
 
-                info2 = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, inp_coef, device, normalize_obs=not args.merge_obsnorm) 
+                info2 = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, inp_coef, device, normalize_obs=not args.merge_obsnorm, denormalizer=weights_denormalizer) 
 
                 for key, val in info2.items():
                     info['Conditional_' + key] = val
