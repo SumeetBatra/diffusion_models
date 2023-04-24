@@ -201,11 +201,11 @@ def initialize_all_models_and_archives(env_name):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # init the archive
-    archive_df_path = 'data/walker2d/archive_100x100.pkl'
+    archive_df_path = f'data/{env_name}/archive_100x100.pkl'
     with open(archive_df_path, 'rb') as f:
         archive_df = pickle.load(f)
 
-    vae_cp = './checkpoints/autoencoder_walker2d.pt'
+    vae_cp = f'./checkpoints/autoencoder_{env_name}.pt'
     vae = VAE(emb_channels=4, z_channels=4, obs_shape=obs_shape, action_shape=action_shape, z_height=4)
     vae.load_state_dict(torch.load(vae_cp))
     vae.to(device)
