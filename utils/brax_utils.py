@@ -64,6 +64,8 @@ shared_params = OrderedDict({
             'archive_resolution': 10000,
             'skip_len': 200,
             'algorithm_name': 'cma_mae_100_0.01',
+            'obs_dim': 87,
+            'action_dim': 8,
             'env_cfg': {
                 'env_name': 'ant',
                 'num_dims': 4,

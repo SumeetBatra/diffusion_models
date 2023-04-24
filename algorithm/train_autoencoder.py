@@ -33,7 +33,7 @@ from torch.utils.tensorboard import SummaryWriter
 def parse_args():
     parser = argparse.ArgumentParser()
     # experiment params
-    parser.add_argument('--env_name', choices=['walker2d', 'halfcheetah', 'humanoid', 'humanoid_crawl'])
+    parser.add_argument('--env_name', choices=['walker2d', 'halfcheetah', 'humanoid', 'humanoid_crawl', 'ant'])
     parser.add_argument('--num_epochs', type=int, default=200)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--output_dir', type=str, default='results')
@@ -53,7 +53,8 @@ def parse_args():
     parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
     # loss function hyperparams
     parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=False)
-    parser.add_argument('--inp_coef', type=float, default=1)
+    parser.add_argument('--inp_coef_w', type=float, default=1)
+    parser.add_argument('--inp_coef_b', type=float, default=1)
     parser.add_argument('--kl_coef', type=float, default=1e-6)
     parser.add_argument('--use_perceptual_loss', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--perceptual_loss_coef', type=float, default=1e-4)
@@ -80,12 +81,13 @@ def evaluate_agent_quality(env_cfg: dict,
                            rec_policies: list[Actor],
                            obs_norms: dict[str, torch.Tensor],
                            test_batch_size: int,
-                           inp_coef: float,
+                           inp_coefs: tuple[float],
                            device: str,
                            normalize_obs: bool = False):
 
     obs_dim = vec_env.single_observation_space.shape[0]
     action_shape = vec_env.single_action_space.shape
+    (inp_coef_w, inp_coef_b) = inp_coefs
 
     # load all relevant data for ground truth and reconstructed agents
     gt_agents, rec_agents = [], []
@@ -98,10 +100,10 @@ def evaluate_agent_quality(env_cfg: dict,
         actor_weights = {key: gt_params_batch[key][k] for key in gt_params_batch.keys() if 'actor' in key}
         recon_actor_weights = rec_agent.state_dict()
 
-        actor_weights['actor_mean.0.weight'] *= (1 / inp_coef)
-        actor_weights['actor_mean.0.bias'] *= (1 / inp_coef)
-        recon_actor_weights['actor_mean.0.weight'] *= (1 / inp_coef)
-        recon_actor_weights['actor_mean.0.bias'] *= (1 / inp_coef)
+        actor_weights['actor_mean.0.weight'] *= (1 / inp_coef_w)
+        actor_weights['actor_mean.0.bias'] *= (1 / inp_coef_b)
+        recon_actor_weights['actor_mean.0.weight'] *= (1 / inp_coef_w)
+        recon_actor_weights['actor_mean.0.bias'] *= (1 / inp_coef_b)
 
         if normalize_obs:
             gt_norm_dict = {'obs_normalizer.' + key: obs_norms[key][k] for key in obs_norms.keys()}
@@ -155,7 +157,7 @@ def evaluate_agent_quality(env_cfg: dict,
     return final_info
 
 
-def shaped_elites_dataset_factory(env_name, merge_obsnorm = True, batch_size=32, is_eval=False, inp_coef=0.25):
+def shaped_elites_dataset_factory(env_name, merge_obsnorm = True, batch_size=32, is_eval=False, inp_coefs: tuple[float] = (1.0, 1.0)):
     archive_data_path = f'data/{env_name}'
     archive_dfs = []
 
@@ -191,7 +193,7 @@ def shaped_elites_dataset_factory(env_name, merge_obsnorm = True, batch_size=32,
                                          device=device,
                                          normalize_obs=merge_obsnorm,
                                          is_eval=is_eval,
-                                         inp_coef=inp_coef,
+                                         inp_coefs=inp_coefs,
                                          eval_batch_size=batch_size if is_eval else None,
                                          )
 
@@ -319,12 +321,13 @@ def train_autoencoder():
 
     mse_loss_func = mse_loss_from_weights_dict
 
+    inp_coefs = (args.inp_coef_w, args.inp_coef_b)
+
     train_batch_size, test_batch_size = 32, 50
     dataloader, train_archive = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=train_batch_size, \
-                                               is_eval=False, inp_coef=args.inp_coef)
+                                               is_eval=False, inp_coefs=inp_coefs)
     test_dataloader, test_archive = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=test_batch_size, \
-                                                is_eval=True,  inp_coef=args.inp_coef)
-    inp_coef = dataloader.dataset.inp_coef
+                                                is_eval=True,  inp_coefs=inp_coefs)
 
     rollouts_per_agent = 10  # to align ourselves with baselines
     if args.track_agent_quality:
@@ -352,14 +355,14 @@ def train_autoencoder():
             else:
                 rec_policies, _ = model(gt_params)
 
-            info = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, inp_coef, device, normalize_obs=not args.merge_obsnorm)
+            info = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, inp_coefs, device, normalize_obs=not args.merge_obsnorm)
 
             
             # now try to sample a policy with just measures
             if args.conditional:
                 rec_policies, _ = model(None, gt_measure)
 
-                info2 = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, inp_coef, device, normalize_obs=not args.merge_obsnorm) 
+                info2 = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, inp_coefs, device, normalize_obs=not args.merge_obsnorm)
 
                 for key, val in info2.items():
                     info['Conditional_' + key] = val
@@ -419,8 +422,8 @@ def train_autoencoder():
             optimizer.step()
             global_step += 1
 
-            loss_info['scaled_actor_mean.0.weight'] = (1/((inp_coef)**2))*loss_info['actor_mean.0.weight']
-            loss_info['scaled_actor_mean.0.bias'] = (1/((inp_coef)**2))*loss_info['actor_mean.0.bias']
+            loss_info['scaled_actor_mean.0.weight'] = (1/((inp_coefs[0])**2))*loss_info['actor_mean.0.weight']
+            loss_info['scaled_actor_mean.0.bias'] = (1/((inp_coefs[1])**2))*loss_info['actor_mean.0.bias']
             epoch_mse_loss += policy_mse_loss.item()
             epoch_kl_loss += kl_loss.item()
             loss_infos.append(loss_info)

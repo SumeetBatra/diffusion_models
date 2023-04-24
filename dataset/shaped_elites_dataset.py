@@ -26,7 +26,7 @@ class ShapedEliteDataset(Dataset):
                  device: str,
                  normalize_obs: bool = False,
                  is_eval: bool = False,
-                 inp_coef: float = 0.25,
+                 inp_coefs: tuple[float] = (1.0, 1.0),
                  eval_batch_size: Optional[int] = 8):
         archive_df = pandas.concat(archive_dfs)
 
@@ -34,7 +34,7 @@ class ShapedEliteDataset(Dataset):
         self.action_shape = action_shape
         self.device = device
         self.is_eval = is_eval
-        self.inp_coef = inp_coef if normalize_obs else 1
+        (self.inp_coef_w, self.inp_coef_b) = inp_coefs if normalize_obs else (1.0, 1.0)
 
         self.measures_list = archive_df.filter(regex='measure*').to_numpy()
         self.metadata = archive_df.filter(regex='metadata*').to_numpy()
@@ -74,19 +74,23 @@ class ShapedEliteDataset(Dataset):
             else:
                 obs_normalizer = normalize_obs
             if self.normalize_obs:
-                weights_dict = self._integrate_obs_normalizer(weights_dict, obs_normalizer, self.inp_coef)
+                weights_dict = self._integrate_obs_normalizer(weights_dict, obs_normalizer, self.inp_coef_w, self.inp_coef_b)
             weight_dicts.append(weights_dict)
             obsnorms.append(obs_normalizer.state_dict())
         return weight_dicts, obsnorms
 
     @staticmethod
-    def _integrate_obs_normalizer(weights_dict, obs_normalizer, inp_coef):
+    def _integrate_obs_normalizer(weights_dict, obs_normalizer, inp_coef_w, inp_coef_b):
         w_in = weights_dict['actor_mean.0.weight']
         b_in = weights_dict['actor_mean.0.bias']
         mean, var = obs_normalizer.obs_rms.mean, obs_normalizer.obs_rms.var
 
-        w_new = inp_coef * (w_in / torch.sqrt(var + 1e-8))
-        b_new = inp_coef * (b_in - (mean / torch.sqrt(var + 1e-8)) @ w_in.T)
+        w_new = (w_in / torch.sqrt(var + 1e-8))
+        b_new = (b_in - (mean / torch.sqrt(var + 1e-8)) @ w_in.T)
+        # uncomment this to empirically determine what the input layer scaling factors should be
+        # print(f'{torch.norm(w_in, p=2)/torch.norm(w_new, p=2)=}, {torch.norm(b_in, p=2)/torch.norm(b_new, p=2)=}')
+        w_new *= inp_coef_w
+        b_new *= inp_coef_b
         weights_dict['actor_mean.0.weight'] = w_new
         weights_dict['actor_mean.0.bias'] = b_new
         return weights_dict
