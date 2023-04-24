@@ -195,7 +195,7 @@ def compare_rec_to_gt_policy(gt_agent, rec_agent, env_cfg, vec_env, device, dete
     return stats 
 
 
-def rollout_many_agents(agents: list[Actor], env_cfg, vec_env, device, deterministic=True, verbose=True, normalize_obs = False):
+def rollout_many_agents(agents: list[Actor], env_cfg, vec_env, device, deterministic=True, verbose=False, normalize_obs = False):
     '''
     Evaluate multiple agents multiple times
     :returns: Sum rewards and average measures for all agents
