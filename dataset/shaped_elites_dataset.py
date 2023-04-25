@@ -27,7 +27,10 @@ class ShapedEliteDataset(Dataset):
                  normalize_obs: bool = False,
                  is_eval: bool = False,
                  inp_coefs: tuple[float] = (1.0, 1.0),
-                 eval_batch_size: Optional[int] = 8):
+                 eval_batch_size: Optional[int] = 8,
+                 center_data: bool = False,
+                 elites_mean: Optional[float] = None,
+                 elites_std: Optional[float] = None):
         archive_df = pandas.concat(archive_dfs)
 
         self.obs_dim = obs_dim
@@ -42,6 +45,11 @@ class ShapedEliteDataset(Dataset):
         self.objective_list = archive_df['objective'].to_numpy()
 
         elites_list = archive_df.filter(regex='solution*').to_numpy()
+        self.elites_mean = elites_mean if elites_mean is not None else elites_list.mean()
+        self.elites_std = elites_std if elites_std is not None else elites_list.std()
+        # zero center the data with unit variance
+        if center_data:
+            elites_list = (elites_list - self.elites_mean) / (self.elites_std + 1e-9)
 
         if self.is_eval:
             # indices shall be eval_batch_size number of indices spaced out (by objective) evenly across the elites_list
