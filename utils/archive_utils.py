@@ -122,7 +122,11 @@ def evaluate(vec_agent, vec_env, num_dims, use_action_means=True, normalize_obs=
     return total_reward.reshape(-1, ), measures.reshape(-1, num_dims).detach().cpu().numpy(), metadata
 
 
-def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, device):
+def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, device,
+                            inp_coefs: tuple[float] = (1.0, 1.0),
+                            center_data: bool = False,
+                            weight_denormalizer = None,
+                            weight_normalizer = None):
     batch_size = len(original_agents)
     weights_dict = {}
     state_dict = original_agents[0].state_dict()
@@ -134,10 +138,18 @@ def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, de
                 params_batch.append(agent.state_dict()[key])
             params_batch = torch.vstack(params_batch).reshape(batch_size, *tuple(shape))
             weights_dict[key] = params_batch
-
+    
+    if center_data:
+        weights_dict = weight_normalizer(weights_dict)
     rec_agents, _ = vae(weights_dict)
     if original_agents[0].obs_normalizer is not None:
         for orig_agent, rec_agent in zip(original_agents, rec_agents):
+
+            if center_data:
+                rec_agent_state_dict = rec_agent.state_dict()
+                weight_denormalizer(rec_agent_state_dict)
+                rec_agent.load_state_dict(rec_agent_state_dict)
+
             rec_agent.obs_normalizer = orig_agent.obs_normalizer
 
     return rec_agents
@@ -168,7 +180,11 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                             sampler=None,
                             scale_factor=None,
                             diffusion_model=None,
-                            save_path=None):
+                            save_path=None,
+                            inp_coefs: tuple[float] = (1.0, 1.0),
+                            center_data: bool = False,
+                            weight_denormalizer = None,
+                            weight_normalizer = None,):
     num_sols = len(original_archive)
     print(f'{num_sols=}')
     env_cfg.env_batch_size = 50 * solution_batch_size
@@ -210,7 +226,10 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
 
         if reconstructed_agents:
             if diffusion_model is None:
-                agent_batch = reconstruct_agents_from_vae(agent_batch, vae, device)
+                agent_batch = reconstruct_agents_from_vae(agent_batch, vae, device, inp_coefs = inp_coefs,
+                                                          center_data=center_data,
+                                                          weight_denormalizer=weight_denormalizer,
+                                                          weight_normalizer=weight_normalizer)
             else:
                 agent_batch = reconstruct_agents_from_ldm(agent_batch, measure_batch, vae, device, sampler,
                                                           scale_factor, diffusion_model)

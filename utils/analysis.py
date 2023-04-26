@@ -24,7 +24,13 @@ from envs.brax_custom.brax_env import make_vec_env_brax
 
 
 def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 100, image_path: str = None,
-                           suffix: str = None, ignore_first: bool = False):
+                            suffix: str = None, ignore_first: bool = False,
+                            normalize_obs: bool = False,
+                            inp_coefs: tuple[float] = (1.0, 1.0),
+                            center_data: bool = False,
+                            weight_denormalizer = None,
+                            weight_normalizer = None,):
+
     '''Randomly sample N elites from the archive. Evaluate the original elites and the reconstructed elites
     from the VAE. Compare the performance using a subsampled QD-Score. Compare the behavior accuracy using the l2 norm
     :param env_name: Name of the environment ex walker2d
@@ -67,11 +73,11 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
 
     normalize_obs, normalize_returns = True, True
     if not ignore_first:
-        print('Re-evaluated Original Archive')
         original_reevaluated_archive = reevaluate_ppga_archive(env_cfg,
                                                                normalize_obs,
                                                                normalize_returns,
                                                                original_archive)
+        print('Re-evaluated Original Archive')
         original_results = {
             'Coverage': original_reevaluated_archive.stats.coverage,
             'Max_fitness': original_reevaluated_archive.stats.obj_max,
@@ -79,13 +85,17 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
             'QD_Score': original_reevaluated_archive.offset_qd_score
         }
 
-    print('Re-evaluated Reconstructed Archive')
     reconstructed_evaluated_archive = reevaluate_ppga_archive(env_cfg,
                                                               normalize_obs,
                                                               normalize_returns,
                                                               original_archive,
                                                               reconstructed_agents=True,
-                                                              vae=vae)
+                                                              vae=vae,
+                                                              inp_coefs=inp_coefs,
+                                                              center_data=center_data,
+                                                              weight_denormalizer=weight_denormalizer,
+                                                              weight_normalizer=weight_normalizer)
+    print('Re-evaluated Reconstructed Archive')
     reconstructed_results = {
         'Coverage': reconstructed_evaluated_archive.stats.coverage,
         'Max_fitness': reconstructed_evaluated_archive.stats.obj_max,

@@ -64,7 +64,7 @@ def parse_args():
     # misc
     parser.add_argument('--reevaluate_archive_vae', type=lambda x: bool(strtobool(x)), default=True, help='Evaluate the VAE on the entire archive every 50 epochs')
     parser.add_argument('--load_from_checkpoint', type=str, default=None, help='Load an existing model from a checkpoint for additional training')
-    parser.add_argument('--center_data', type=lambda x: bool(strtobool(x)), default=False, help='Zero center the policy dataset with unit variance')
+    parser.add_argument('--center_data', type=lambda x: bool(strtobool(x)), default=True, help='Zero center the policy dataset with unit variance')
 
     args = parser.parse_args()
     return args
@@ -87,8 +87,8 @@ def evaluate_agent_quality(env_cfg: dict,
                            device: str,
                            normalize_obs: bool = False,
                            center_data: bool = False,
-                           elites_mean: Optional[float] = None,
-                           elites_std: Optional[float] = None):
+                           weight_denormalizer = None,
+                           weight_normalizer = None,):
 
     obs_dim = vec_env.single_observation_space.shape[0]
     action_shape = vec_env.single_action_space.shape
@@ -98,12 +98,10 @@ def evaluate_agent_quality(env_cfg: dict,
     gt_agents, rec_agents = [], []
     for k in range(test_batch_size):
         gt_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device)
-        rec_agent = rec_policies[k].to(device)
-        rec_agent.obs_normalizer = gt_agent.obs_normalizer
-        rec_agent.actor_logstd = gt_agent.actor_logstd
+        rec_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device)
 
         actor_weights = {key: gt_params_batch[key][k] for key in gt_params_batch.keys() if 'actor' in key}
-        recon_actor_weights = rec_agent.state_dict()
+        recon_actor_weights = rec_policies[k].state_dict()
 
         actor_weights['actor_mean.0.weight'] *= (1 / inp_coef_w)
         actor_weights['actor_mean.0.bias'] *= (1 / inp_coef_b)
@@ -111,16 +109,17 @@ def evaluate_agent_quality(env_cfg: dict,
         recon_actor_weights['actor_mean.0.bias'] *= (1 / inp_coef_b)
 
         if center_data:
-            for (n1, p1), (n2, p2) in zip(actor_weights.items(), recon_actor_weights.items()):
-                actor_weights[n1] = (p1 * (elites_std - 1e-9)) + elites_mean
-                recon_actor_weights[n2] = (p2 * (elites_std - 1e-9)) + elites_mean
+            weight_denormalizer(actor_weights)
+            weight_denormalizer(recon_actor_weights)
+            
 
         if normalize_obs:
             gt_norm_dict = {'obs_normalizer.' + key: obs_norms[key][k] for key in obs_norms.keys()}
-            std_norm_dict = {key: obs_norms[key][k] for key in obs_norms.keys()}
+            rec_norm_dict = {'obs_normalizer.' + key: obs_norms[key][k] for key in obs_norms.keys()}
             actor_weights.update(gt_norm_dict)
-            gt_agent.obs_normalizer.load_state_dict(std_norm_dict)
-            rec_agent.obs_normalizer.load_state_dict(std_norm_dict)
+            recon_actor_weights.update(rec_norm_dict)
+
+        recon_actor_weights['actor_logstd'] = actor_weights['actor_logstd']
 
         gt_agent.load_state_dict(actor_weights)
         rec_agent.load_state_dict(recon_actor_weights)
@@ -173,8 +172,8 @@ def shaped_elites_dataset_factory(env_name,
                                   is_eval=False,
                                   inp_coefs: tuple[float] = (1.0, 1.0),
                                   center_data: bool = False,
-                                  elites_mean: Optional[float] = None,
-                                  elites_std: Optional[float] = None):
+                                  weight_mean_dict: Optional[dict] = None,
+                                  weight_std_dict: Optional[dict] = None):
     archive_data_path = f'data/{env_name}'
     archive_dfs = []
 
@@ -213,12 +212,13 @@ def shaped_elites_dataset_factory(env_name,
                                          inp_coefs=inp_coefs,
                                          eval_batch_size=batch_size if is_eval else None,
                                          center_data=center_data,
-                                         elites_mean=elites_mean,
-                                         elites_std=elites_std)
+                                         weight_mean_dict=weight_mean_dict,
+                                         weight_std_dict=weight_std_dict)
 
-    elites_mean, elites_std = s_elite_dataset.elites_mean, s_elite_dataset.elites_std
-
-    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs, elites_mean, elites_std
+    weights_mean, weights_std = s_elite_dataset.weight_mean_dict, s_elite_dataset.weight_std_dict
+    denormalizer_weight = s_elite_dataset.denormalize_weights
+    normalizer_weight = s_elite_dataset.normalize_weights
+    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs, weights_mean, weights_std, denormalizer_weight, normalizer_weight
 
 
 def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor]):
@@ -344,18 +344,20 @@ def train_autoencoder():
 
     inp_coefs = (args.inp_coef_w, args.inp_coef_b)
 
-    train_batch_size, test_batch_size = 32, 50
-    dataloader, train_archive, elites_mean, elites_std = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=train_batch_size, \
-                                               is_eval=False, inp_coefs=inp_coefs, center_data=args.center_data)
-    test_dataloader, test_archive, _, _ = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=test_batch_size, \
-                                                is_eval=True,  inp_coefs=inp_coefs, center_data=args.center_data, elites_mean=elites_mean, elites_std=elites_std)
+    train_batch_size, test_batch_size = 32, 8
+    dataloader, train_archive, weight_mean_dict, weight_std_dict, weight_denormalizer, weight_normalizer = shaped_elites_dataset_factory( \
+                                                args.env_name, args.merge_obsnorm, batch_size=train_batch_size, \
+                                                is_eval=False, inp_coefs=inp_coefs, center_data=args.center_data)
+    test_dataloader, test_archive, _, _, _, _ = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=test_batch_size, \
+                                                is_eval=True,  inp_coefs=inp_coefs, center_data=args.center_data, \
+                                                    weight_mean_dict=weight_mean_dict, weight_std_dict=weight_std_dict)
 
-    log.debug(f'{elites_mean=}, {elites_std=}')
+    # log.debug(f'{weight_mean_dict=}, {weight_std_dict=}')
     dataset_kwargs = {
         'inp_coefs': inp_coefs,
         'center_data': args.center_data,
-        'elites_mean': elites_mean,
-        'elites_std': elites_std,
+        'weight_denormalizer': weight_denormalizer,
+        'weight_normalizer': weight_normalizer,
     }
 
     rollouts_per_agent = 10  # to align ourselves with baselines
@@ -384,13 +386,28 @@ def train_autoencoder():
             else:
                 rec_policies, _ = model(gt_params)
 
-            info = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, device=device, normalize_obs=not args.merge_obsnorm, **dataset_kwargs)
+            info = evaluate_agent_quality(env_cfg, 
+                                          env, gt_params, 
+                                          rec_policies, 
+                                          obsnorms, 
+                                          test_batch_size, 
+                                          device=device, 
+                                          normalize_obs=not args.merge_obsnorm, 
+                                          **dataset_kwargs)
             
             # now try to sample a policy with just measures
             if args.conditional:
                 rec_policies, _ = model(None, gt_measure)
 
-                info2 = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, device=device, normalize_obs=not args.merge_obsnorm, **dataset_kwargs)
+                info2 = evaluate_agent_quality(env_cfg, 
+                                               env, 
+                                               gt_params, 
+                                               rec_policies, 
+                                               obsnorms, 
+                                               test_batch_size, 
+                                               device=device, 
+                                               normalize_obs=not args.merge_obsnorm, 
+                                               **dataset_kwargs)
 
                 for key, val in info2.items():
                     info['Conditional_' + key] = val
@@ -398,7 +415,15 @@ def train_autoencoder():
             if epoch % 50 == 0 and args.reevaluate_archive_vae:
                 # evaluate the model on the entire archive
                 print('Evaluating model on entire archive...')
-                subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = args.image_path, suffix = str(epoch), ignore_first=True)
+                subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name, 
+                                                                          archive_df=train_archive[0], 
+                                                                          model=model, 
+                                                                          N=-1, 
+                                                                          image_path = args.image_path, 
+                                                                          suffix = str(epoch), 
+                                                                          ignore_first=True,
+                                                                          normalize_obs=not args.merge_obsnorm, 
+                                                                          **dataset_kwargs)
                 for key, val in subsample_results['Reconstructed'].items():
                     info['Archive/' + key] = val
                 

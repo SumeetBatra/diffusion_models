@@ -29,8 +29,8 @@ class ShapedEliteDataset(Dataset):
                  inp_coefs: tuple[float] = (1.0, 1.0),
                  eval_batch_size: Optional[int] = 8,
                  center_data: bool = False,
-                 elites_mean: Optional[float] = None,
-                 elites_std: Optional[float] = None):
+                 weight_mean_dict: Optional[dict] = None,
+                 weight_std_dict: Optional[dict] = None):
         archive_df = pandas.concat(archive_dfs)
 
         self.obs_dim = obs_dim
@@ -45,11 +45,6 @@ class ShapedEliteDataset(Dataset):
         self.objective_list = archive_df['objective'].to_numpy()
 
         elites_list = archive_df.filter(regex='solution*').to_numpy()
-        self.elites_mean = elites_mean if elites_mean is not None else elites_list.mean()
-        self.elites_std = elites_std if elites_std is not None else elites_list.std()
-        # zero center the data with unit variance
-        if center_data:
-            elites_list = (elites_list - self.elites_mean) / (self.elites_std + 1e-9)
 
         if self.is_eval:
             # indices shall be eval_batch_size number of indices spaced out (by objective) evenly across the elites_list
@@ -61,6 +56,42 @@ class ShapedEliteDataset(Dataset):
             self.objective_list = self.objective_list[indices]
 
         self.weight_dicts_list, self.obsnorm_list = self._params_to_weight_dicts(elites_list)
+
+        self.weight_mean_dict = weight_mean_dict if weight_mean_dict is not None else \
+            {key: torch.cat([weight_dicts[key] for weight_dicts in self.weight_dicts_list]).mean(0).to(self.device) \
+                for key, value in self.weight_dicts_list[0].items()}
+        self.weight_std_dict = weight_std_dict if weight_std_dict is not None else \
+            {key: torch.cat([weight_dicts[key] for weight_dicts in self.weight_dicts_list]).std(0).to(self.device) \
+                for key, value in self.weight_dicts_list[0].items()}
+        # zero center the data with unit variance
+        if center_data:
+            # for weight_dicts in self.weight_dicts_list:
+            #     for key, value in weight_dicts.items():
+            #         weight_dicts[key] = (value - self.weight_mean_dict[key]) / self.weight_std_dict[key]
+            self.weight_dicts_list = self.normalize_weights(self.weight_dicts_list)
+
+
+    def denormalize_weights(self, weights_dict):
+        if type(weights_dict) == list:
+            for weight_dict_ in weights_dict:
+                for key, value in weight_dict_.items():
+                    weight_dict_[key] = value * self.weight_std_dict[key] + self.weight_mean_dict[key]
+            return weights_dict
+        else:
+            for key, value in weights_dict.items():
+                weights_dict[key] = value * self.weight_std_dict[key] + self.weight_mean_dict[key]
+            return weights_dict
+        
+    def normalize_weights(self, weights_dict):
+        if type(weights_dict) == list:
+            for weight_dict_ in weights_dict:
+                for key, value in weight_dict_.items():
+                    weight_dict_[key] = (value - self.weight_mean_dict[key]) / self.weight_std_dict[key]
+            return weights_dict
+        else:
+            for key, value in weights_dict.items():
+                weights_dict[key] = (value - self.weight_mean_dict[key]) / self.weight_std_dict[key]
+            return weights_dict
 
     def __len__(self):
         return len(self.weight_dicts_list)
