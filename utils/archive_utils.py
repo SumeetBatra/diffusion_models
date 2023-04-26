@@ -109,16 +109,17 @@ def evaluate(vec_agent, vec_env, num_dims, use_action_means=True, normalize_obs=
 
     # the first done in each env is where that trajectory ends
     traj_lengths = torch.argmax(all_dones, dim=0) + 1
-    avg_traj_lengths = traj_lengths.to(torch.float32).reshape(
-        (vec_agent.num_models, vec_env.num_envs // vec_agent.num_models)).mean(dim=1).cpu().numpy()
+    # avg_traj_lengths = traj_lengths.to(torch.float32).reshape(
+        # (vec_agent.num_models, vec_env.num_envs // vec_agent.num_models)).mean(dim=1).cpu().numpy()
+    avg_traj_lengths = traj_lengths.to(torch.float32).cpu().numpy()
     # TODO: figure out how to vectorize this
     for i in range(vec_env.num_envs):
         measures[i] = measures_acc[:traj_lengths[i], i].sum(dim=0) / traj_lengths[i]
-    measures = measures.reshape(vec_agent.num_models, vec_env.num_envs // vec_agent.num_models, -1).mean(dim=1)
+    # measures = measures.reshape(vec_agent.num_models, vec_env.num_envs // vec_agent.num_models, -1).mean(dim=1)
 
     metadata = np.array([{'traj_length': t} for t in avg_traj_lengths])
-    total_reward = total_reward.reshape((vec_agent.num_models, vec_env.num_envs // vec_agent.num_models))
-    total_reward = total_reward.mean(axis=1)
+    # total_reward = total_reward.reshape((vec_agent.num_models, vec_env.num_envs // vec_agent.num_models))
+    # total_reward = total_reward.mean(axis=1)
     return total_reward.reshape(-1, ), measures.reshape(-1, num_dims).detach().cpu().numpy(), metadata
 
 
@@ -293,7 +294,7 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                               qd_offset=reward_offset[env_cfg.env_name])
     # add the re-evaluated solutions to the new archive
     new_archive.add(
-        np.ones((len(original_archive), 1)),
+        np.ones((len(all_objs), 1)),
         all_objs,
         all_measures,
         all_metadata
