@@ -131,6 +131,7 @@ def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, de
                             obsnorm_normalizer = None,):
     batch_size = len(original_agents)
     weights_dict = {}
+    obsnorm_dict = {}
     state_dict = original_agents[0].state_dict()
     for key in state_dict.keys():
         if 'weight' in key or 'bias' in key or 'logstd' in key:
@@ -140,19 +141,40 @@ def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, de
                 params_batch.append(agent.state_dict()[key])
             params_batch = torch.vstack(params_batch).reshape(batch_size, *tuple(shape))
             weights_dict[key] = params_batch
+        
+        if 'obs_normalizer' in key:
+            params_batch = []
+            for agent in original_agents:
+                params_batch.append(agent.state_dict()[key])
+            params_batch = torch.vstack(params_batch)
+            obsnorm_dict[key] = params_batch
+    
+    gt_obsnorm_dict = {
+        'obs_rms.mean': obsnorm_dict['obs_normalizer.obs_rms.mean'],
+        'obs_rms.logstd' : torch.log(torch.sqrt(obsnorm_dict['obs_normalizer.obs_rms.var']+ 1e-8))
+    }
+
     
     if center_data:
         weights_dict = weight_normalizer(weights_dict)
-    rec_agents, _ = vae(weights_dict)
-    if original_agents[0].obs_normalizer is not None:
-        for orig_agent, rec_agent in zip(original_agents, rec_agents):
+        gt_obsnorm_dict = obsnorm_normalizer(gt_obsnorm_dict)
 
+    (rec_agents, rec_obsnorms), _ = vae(weights_dict, gt_obsnorm_dict)
+    if original_agents[0].obs_normalizer is not None:
+        for i, (orig_agent, rec_agent) in enumerate(zip(original_agents, rec_agents)):
+
+            rec_obsnorm = {key: rec_obsnorms[key][i] for key in rec_obsnorms.keys()}
             if center_data:
                 rec_agent_state_dict = rec_agent.state_dict()
                 weight_denormalizer(rec_agent_state_dict)
-                rec_agent.load_state_dict(rec_agent_state_dict)
+
+                obsnorm_denormalizer(rec_obsnorm)
+            
+            rec_agent.load_state_dict(rec_agent_state_dict)
 
             rec_agent.obs_normalizer = orig_agent.obs_normalizer
+            rec_agent.obs_normalizer.obs_rms.mean = rec_obsnorm['obs_rms.mean']
+            rec_agent.obs_normalizer.obs_rms.var = torch.exp(2 * rec_obsnorm['obs_rms.logstd'])
 
     return rec_agents
 
