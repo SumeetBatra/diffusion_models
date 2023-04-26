@@ -126,7 +126,9 @@ def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, de
                             inp_coefs: tuple[float] = (1.0, 1.0),
                             center_data: bool = False,
                             weight_denormalizer = None,
-                            weight_normalizer = None):
+                            weight_normalizer = None,
+                            obsnorm_denormalizer = None,
+                            obsnorm_normalizer = None,):
     batch_size = len(original_agents)
     weights_dict = {}
     state_dict = original_agents[0].state_dict()
@@ -184,7 +186,10 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                             inp_coefs: tuple[float] = (1.0, 1.0),
                             center_data: bool = False,
                             weight_denormalizer = None,
-                            weight_normalizer = None,):
+                            weight_normalizer = None,
+                            obsnorm_denormalizer = None,
+                            obsnorm_normalizer = None,
+                            ):
     num_sols = len(original_archive)
     print(f'{num_sols=}')
     env_cfg.env_batch_size = 50 * solution_batch_size
@@ -229,7 +234,9 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                 agent_batch = reconstruct_agents_from_vae(agent_batch, vae, device, inp_coefs = inp_coefs,
                                                           center_data=center_data,
                                                           weight_denormalizer=weight_denormalizer,
-                                                          weight_normalizer=weight_normalizer)
+                                                          weight_normalizer=weight_normalizer,
+                                                          obsnorm_denormalizer=obsnorm_denormalizer,
+                                                          obsnorm_normalizer=obsnorm_normalizer)
             else:
                 agent_batch = reconstruct_agents_from_ldm(agent_batch, measure_batch, vae, device, sampler,
                                                           scale_factor, diffusion_model)

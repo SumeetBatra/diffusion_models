@@ -82,6 +82,7 @@ def evaluate_agent_quality(env_cfg: dict,
                            gt_params_batch: dict[str, torch.Tensor],
                            rec_policies: list[Actor],
                            obs_norms: dict[str, torch.Tensor],
+                           rec_obs_norms: dict[str, torch.Tensor],
                            test_batch_size: int,
                            inp_coefs: tuple[float],
                            device: str,
@@ -119,12 +120,17 @@ def evaluate_agent_quality(env_cfg: dict,
             obs_norms_cpy = {'obs_rms.mean' : obs_norms['obs_rms.mean'][k],
                 'obs_rms.var' : obs_norms['obs_rms.var'][k],
                 'obs_rms.count' : obs_norms['obs_rms.count'][k],}
+
+            rec_obs_norms_cpy = {'obs_rms.mean' : rec_obs_norms['obs_rms.mean'][k],
+                            'obs_rms.var' : torch.exp(rec_obs_norms['obs_rms.logstd'][k] * 2),
+                            'obs_rms.count' : obs_norms['obs_rms.count'][k],}
             
             if center_data:
                 obsnorm_denormalizer(obs_norms_cpy)
+                obsnorm_denormalizer(rec_obs_norms_cpy)
 
             gt_norm_dict = {'obs_normalizer.' + key: obs_norms_cpy[key] for key in obs_norms_cpy.keys()}
-            rec_norm_dict = {'obs_normalizer.' + key: obs_norms_cpy[key] for key in obs_norms_cpy.keys()}
+            rec_norm_dict = {'obs_normalizer.' + key: rec_obs_norms_cpy[key] for key in rec_obs_norms_cpy.keys()}
             actor_weights.update(gt_norm_dict)
             recon_actor_weights.update(rec_norm_dict)
 
@@ -256,6 +262,16 @@ def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor
         loss_info[key] = key_loss.item()
     return loss, loss_info
 
+def mse_from_norm_dict(target_weights_dict: dict, rec_weight_dict: dict):
+    loss = 0
+    loss_info = {}
+    for key in rec_weight_dict.keys():
+        key_loss = F.mse_loss(target_weights_dict[key], rec_weight_dict[key])
+        loss += key_loss
+        loss_info[key] = key_loss.item()
+    return loss, loss_info
+
+
 
 def agent_to_weights_dict(agents: list[Actor]):
     '''Converts a batch of agents of type 'Actor' to a dict of batched weights'''
@@ -358,6 +374,7 @@ def train_autoencoder():
     optimizer = Adam(model.parameters(), lr=1e-4)
 
     mse_loss_func = mse_loss_from_weights_dict
+    norm_mse_loss_func = mse_from_norm_dict
 
     inp_coefs = (args.inp_coef_w, args.inp_coef_b)
 
@@ -402,14 +419,15 @@ def train_autoencoder():
             gt_measure = gt_measure.to(device).to(torch.float32)
 
             if args.conditional:
-                rec_policies, _ = model(gt_params, gt_measure)
+                rec_policies, _ = model(gt_params, obsnorms, gt_measure)
             else:
-                rec_policies, _ = model(gt_params)
+                (rec_policies, rec_obsnorm), _ = model(gt_params, obsnorms)
 
             info = evaluate_agent_quality(env_cfg, 
                                           env, gt_params, 
                                           rec_policies, 
                                           obsnorms, 
+                                          rec_obsnorm, 
                                           test_batch_size, 
                                           device=device, 
                                           normalize_obs=not args.merge_obsnorm, 
@@ -424,6 +442,7 @@ def train_autoencoder():
                                                gt_params, 
                                                rec_policies, 
                                                obsnorms, 
+                                               rec_obsnorm,
                                                test_batch_size, 
                                                device=device, 
                                                normalize_obs=not args.merge_obsnorm, 
@@ -463,22 +482,28 @@ def train_autoencoder():
 
         epoch_mse_loss = 0
         epoch_kl_loss = 0
+        epoch_norm_mse_loss = 0
+        epoch_norm_kl_loss = 0
         epoch_perceptual_loss = 0
         loss_infos = []
-        for step, (policies, measures, _) in enumerate(dataloader):
+        for step, (policies, measures, obsnorms) in enumerate(dataloader):
             optimizer.zero_grad()
 
             # policies = policies.to(device)
             measures = measures.to(device).to(torch.float32)
 
             if args.conditional:
-                rec_policies, posterior = model(policies, measures)
+                (rec_policies, rec_obsnorm), (posterior, obsnorm_posterior) = model(policies, obsnorms, measures)
             else:
-                rec_policies, posterior = model(policies)
+                (rec_policies, rec_obsnorm), (posterior, obsnorm_posterior) = model(policies, obsnorms)
 
             policy_mse_loss, loss_info = mse_loss_func(policies, rec_policies)
+            norm_mse_loss, norm_loss_info = norm_mse_loss_func(obsnorms, rec_obsnorm)
+
             kl_loss = posterior.kl().mean()
-            loss = policy_mse_loss + args.kl_coef * kl_loss
+            norm_kl_loss = obsnorm_posterior.kl().mean()
+
+            loss = policy_mse_loss + args.kl_coef * kl_loss + norm_mse_loss + args.kl_coef * norm_kl_loss
 
             if args.use_perceptual_loss:
                 rec_weights_dict = agent_to_weights_dict(rec_policies)
@@ -499,21 +524,27 @@ def train_autoencoder():
             loss_info['scaled_actor_mean.0.bias'] = (1/((inp_coefs[1])**2))*loss_info['actor_mean.0.bias']
             epoch_mse_loss += policy_mse_loss.item()
             epoch_kl_loss += kl_loss.item()
+            epoch_norm_mse_loss += norm_mse_loss.item()
+            epoch_norm_kl_loss += norm_kl_loss.item()
             loss_infos.append(loss_info)
 
 
     
-        print(f'Epoch {epoch} MSE Loss: {epoch_mse_loss / len(dataloader)}')
+        print(f'Epoch {epoch} MSE Loss: {epoch_mse_loss / len(dataloader)}, Norm MSE Loss: {epoch_norm_mse_loss / len(dataloader)}')
         if args.use_wandb:
             avg_loss_infos = {key: sum([loss_info[key] for loss_info in loss_infos]) / len(loss_infos) for key in loss_infos[0].keys()}
 
             writer.add_scalar("Loss/mse_loss", epoch_mse_loss / len(dataloader), global_step+1)
             writer.add_scalar("Loss/kl_loss", epoch_kl_loss / len(dataloader), global_step+1)
             writer.add_scalar("Loss/perceptual_loss", epoch_perceptual_loss / len(dataloader), global_step+1)
+            writer.add_scalar("Loss/norm_mse_loss", epoch_norm_mse_loss / len(dataloader), global_step+1)
+            writer.add_scalar("Loss/norm_kl_loss", epoch_norm_kl_loss / len(dataloader), global_step+1)
             wandb.log({
                 'Loss/mse_loss': epoch_mse_loss / len(dataloader),
                 'Loss/kl_loss': epoch_kl_loss / len(dataloader),
                 'Loss/perceptual_loss': epoch_perceptual_loss / len(dataloader),
+                'Loss/norm_mse_loss': epoch_norm_mse_loss / len(dataloader),
+                'Loss/norm_kl_loss': epoch_norm_kl_loss / len(dataloader),
                 'epoch': epoch + 1,
                 'global_step': global_step + 1
             })
