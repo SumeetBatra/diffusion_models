@@ -378,7 +378,7 @@ def train_autoencoder():
 
     inp_coefs = (args.inp_coef_w, args.inp_coef_b)
 
-    train_batch_size, test_batch_size = 32, 8
+    train_batch_size, test_batch_size = 32, 50
     dataloader, train_archive, weight_mean_dict, weight_std_dict, weight_denormalizer, weight_normalizer, obsnorm_mean_dict, obsnorm_std_dict, obsnorm_denormalizer, obsnorm_normalizer = shaped_elites_dataset_factory( \
                                                 args.env_name, args.merge_obsnorm, batch_size=train_batch_size, \
                                                 is_eval=False, inp_coefs=inp_coefs, center_data=args.center_data)
@@ -483,7 +483,6 @@ def train_autoencoder():
         epoch_mse_loss = 0
         epoch_kl_loss = 0
         epoch_norm_mse_loss = 0
-        epoch_norm_kl_loss = 0
         epoch_perceptual_loss = 0
         loss_infos = []
         for step, (policies, measures, obsnorms) in enumerate(dataloader):
@@ -493,17 +492,16 @@ def train_autoencoder():
             measures = measures.to(device).to(torch.float32)
 
             if args.conditional:
-                (rec_policies, rec_obsnorm), (posterior, obsnorm_posterior) = model(policies, obsnorms, measures)
+                (rec_policies, rec_obsnorm), posterior = model(policies, obsnorms, measures)
             else:
-                (rec_policies, rec_obsnorm), (posterior, obsnorm_posterior) = model(policies, obsnorms)
+                (rec_policies, rec_obsnorm), posterior = model(policies, obsnorms)
 
             policy_mse_loss, loss_info = mse_loss_func(policies, rec_policies)
             norm_mse_loss, norm_loss_info = norm_mse_loss_func(obsnorms, rec_obsnorm)
 
             kl_loss = posterior.kl().mean()
-            norm_kl_loss = obsnorm_posterior.kl().mean()
 
-            loss = policy_mse_loss + args.kl_coef * kl_loss + norm_mse_loss + args.kl_coef * norm_kl_loss
+            loss = policy_mse_loss + args.kl_coef * kl_loss + norm_mse_loss
 
             if args.use_perceptual_loss:
                 rec_weights_dict = agent_to_weights_dict(rec_policies)
@@ -525,7 +523,6 @@ def train_autoencoder():
             epoch_mse_loss += policy_mse_loss.item()
             epoch_kl_loss += kl_loss.item()
             epoch_norm_mse_loss += norm_mse_loss.item()
-            epoch_norm_kl_loss += norm_kl_loss.item()
             loss_infos.append(loss_info)
 
 

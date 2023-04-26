@@ -49,12 +49,6 @@ class HypernetAutoEncoder(AutoEncoderBase):
                                     conditional=conditional,
                                     )
         
-        self.obsnorm_encoder = ObsNormEncoder(obs_shape=obs_shape,
-                                      z_channels=z_channels,
-                                      z_height=z_height,
-                                      conditional=conditional,
-                                      hid = obsnorm_hid,
-                                      )
 
         # config dict for the hypernet decoder
         action_dim, obs_dim = action_shape[0], obs_shape
@@ -82,9 +76,6 @@ class HypernetAutoEncoder(AutoEncoderBase):
         
         print(f"Total size of z is: {self.decoder.z_vec_size}")
 
-        self.obsnorm_quant_conv = nn.Conv2d(2 * z_channels, 2 * emb_channels, 1)
-        self.obsnorm_post_quant_conv = nn.Conv2d(emb_channels, z_channels, 1)
-
         def make_actor():
             return Actor(obs_shape=obs_shape,
                          action_shape=action_shape,
@@ -95,21 +86,18 @@ class HypernetAutoEncoder(AutoEncoderBase):
 
     def encode(self, x: torch.Tensor, x2:torch.Tensor, y: torch.Tensor = None):
         assert self.encoder is not None, "Need to define a valid encoder (nn.Module)"
-        z = self.encoder(x,y)
+        z = self.encoder(x,x2,y)
         moments = self.quant_conv(z)
-        z_obsnorm = self.obsnorm_encoder(x2,y)
-        obsnorm_moments = self.obsnorm_quant_conv(z_obsnorm)
-        return GaussianDistribution(moments), GaussianDistribution(obsnorm_moments)
+        return GaussianDistribution(moments)
 
-    def decode(self, z: torch.Tensor, z2: torch.Tensor, y: torch.Tensor = None):
+    def decode(self, z: torch.Tensor, y: torch.Tensor = None):
         """
         ### Decode policies from latent representation
         :param z: is the latent representation with shape `[batch_size, emb_channels, z_height, z_height]`
         """
         # Map to embedding space from the quantized representation
-        z2 = self.post_quant_conv(z2)
-        recon_obsnorm = self.obsnorm_decoder(z2)
         z = self.post_quant_conv(z)
+        recon_obsnorm = self.obsnorm_decoder(z)
         # Decode the image of shape `[batch_size, channels, height, width]`
         return self.decoder([self.dummy_actor() for _ in range(z.shape[0])], z, y), recon_obsnorm
 
@@ -118,11 +106,10 @@ class HypernetAutoEncoder(AutoEncoderBase):
             # Not coded for obsnorm yet
             posterior = self.random_sample(x, y)
         else:
-            posterior, obsnorm_posterior = self.encode(x, x2, y)
+            posterior = self.encode(x, x2, y)
         z = posterior.sample()
-        z_obsnorm = obsnorm_posterior.sample()
-        out = self.decode(z, z_obsnorm, y)
-        return out, (posterior, obsnorm_posterior)
+        out = self.decode(z, y)
+        return out, posterior
 
 
 class ObsNormEncoder(nn.Module):
@@ -198,13 +185,12 @@ class ObsNormDecoder(nn.Module):
 
 
 class ModelEncoder(nn.Module):
-    def __init__(self, obs_shape, action_shape, emb_channels, z_channels, obs_norm=False, z_height=4,
+    def __init__(self, obs_shape, action_shape, emb_channels, z_channels, z_height=4,
                  regress_to_measure=False, measure_dim=2, conditional=False):
         super().__init__()
 
-        self.obs_norm = obs_norm
         self.conditional = conditional
-        dummy_actor = Actor(obs_shape=obs_shape, action_shape=action_shape, normalize_obs=self.obs_norm,
+        dummy_actor = Actor(obs_shape=obs_shape, action_shape=action_shape, normalize_obs=False,
                             normalize_returns=True)
 
         self.channels = [1, 32, 64, 64, 128, 256, 256, 512, 512, 512]
@@ -245,15 +231,15 @@ class ModelEncoder(nn.Module):
 
             total_op_shape += np.prod(op_shape)
 
-        if self.obs_norm:
-            shape = (1, 1,) + tuple(dummy_actor.obs_normalizer.obs_rms.mean.shape) + (1,)
-            self.cnns['rms_mean'], op_shape = self._create_fc_backbone(shape)
-            total_op_shape += np.prod(op_shape)
-            shape = (1, 1,) + tuple(dummy_actor.obs_normalizer.obs_rms.var.shape) + (1,)
-            self.cnns['rms_var'], op_shape = self._create_fc_backbone(shape)
-            total_op_shape += np.prod(op_shape)
 
         self.cnns = nn.ModuleDict(self.cnns)
+        self.obsnorm_encoder = ObsNormEncoder(obs_shape=obs_shape,
+                                z_channels=z_channels,
+                                z_height=z_height,
+                                conditional=conditional,
+                                hid = 64,
+                                )
+        total_op_shape += 2 * z_channels * z_height * z_height
 
         if self.conditional:
             total_op_shape += 2
@@ -261,6 +247,8 @@ class ModelEncoder(nn.Module):
         self.out = nn.Linear(total_op_shape, 2 * self.z_channels * self.z_height * self.z_height)
         if self.regress_to_measure:
             self.measure_out = nn.Linear(2 * self.z_channels * self.z_height * self.z_height, self.measure_dim)
+
+
 
     # create a cnn backbone to extract features from tensor of shape (batch_size, *shape)
     def _create_cnn_backbone(self, shape, leaky_relu=False):
@@ -322,7 +310,7 @@ class ModelEncoder(nn.Module):
         fc.add_module('relu3', nn.ReLU(inplace=True))
         return fc, (1, 1, 256, 1)
 
-    def forward(self, x, y = None, get_intermediate_features=False):
+    def forward(self, x, x2, y = None, get_intermediate_features=False):
         outs = []
         features = []
         for k in range(len(self.list_of_weight_names)):
@@ -347,14 +335,9 @@ class ModelEncoder(nn.Module):
                 out = out.view(out.size(0), -1)
                 outs.append(out)
 
-        if self.obs_norm:
-            out = self.cnns['rms_mean'](x['rms_mean'].unsqueeze(1))
-            out = out.view(out.size(0), -1)
-            outs.append(out)
-            out = self.cnns['rms_var'](x['rms_var'].unsqueeze(1))
-            out = out.view(out.size(0), -1)
-            outs.append(out)
 
+        obs_norm_enc = self.obsnorm_encoder(x2)
+        outs.append(obs_norm_enc.flatten(1))
         x = torch.cat(outs, dim=1)
         if self.conditional:
             x = torch.cat([x, y], dim=1)
