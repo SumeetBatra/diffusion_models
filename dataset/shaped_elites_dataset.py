@@ -30,7 +30,9 @@ class ShapedEliteDataset(Dataset):
                  eval_batch_size: Optional[int] = 8,
                  center_data: bool = False,
                  weight_mean_dict: Optional[dict] = None,
-                 weight_std_dict: Optional[dict] = None):
+                 weight_std_dict: Optional[dict] = None,
+                 obsnorm_mean_dict: Optional[dict] = None,
+                 obsnorm_std_dict: Optional[dict] = None):
         archive_df = pandas.concat(archive_dfs)
 
         self.obs_dim = obs_dim
@@ -63,12 +65,18 @@ class ShapedEliteDataset(Dataset):
         self.weight_std_dict = weight_std_dict if weight_std_dict is not None else \
             {key: torch.cat([weight_dicts[key] for weight_dicts in self.weight_dicts_list]).std(0).to(self.device) \
                 for key, value in self.weight_dicts_list[0].items()}
+        self.obs_norm_mean_dict = obsnorm_mean_dict if obsnorm_mean_dict is not None else \
+            {key: torch.stack([obsnorm[key] for obsnorm in self.obsnorm_list]).mean(0).to(self.device) \
+                for key, value in self.obsnorm_list[0].items()}
+        self.obs_norm_std_dict = obsnorm_std_dict if obsnorm_std_dict is not None else \
+            {key: torch.stack([obsnorm[key] for obsnorm in self.obsnorm_list]).std(0).to(self.device) \
+                for key, value in self.obsnorm_list[0].items()}
+        
+        
         # zero center the data with unit variance
         if center_data:
-            # for weight_dicts in self.weight_dicts_list:
-            #     for key, value in weight_dicts.items():
-            #         weight_dicts[key] = (value - self.weight_mean_dict[key]) / self.weight_std_dict[key]
             self.weight_dicts_list = self.normalize_weights(self.weight_dicts_list)
+            self.obsnorm_list = self.normalize_obsnorm(self.obsnorm_list)
 
 
     def denormalize_weights(self, weights_dict):
@@ -92,6 +100,29 @@ class ShapedEliteDataset(Dataset):
             for key, value in weights_dict.items():
                 weights_dict[key] = (value - self.weight_mean_dict[key]) / self.weight_std_dict[key]
             return weights_dict
+        
+    def denormalize_obsnorm(self, obsnorm):
+        if type(obsnorm) == list:
+            for obsnorm_ in obsnorm:
+                for key, value in obsnorm_.items():
+                    obsnorm_[key] = value * self.obs_norm_std_dict[key] + self.obs_norm_mean_dict[key]
+            return obsnorm
+        else:
+            for key, value in obsnorm.items():
+                obsnorm[key] = value * self.obs_norm_std_dict[key] + self.obs_norm_mean_dict[key]
+            return obsnorm
+    
+    def normalize_obsnorm(self, obsnorm):
+        if type(obsnorm) == list:
+            for obsnorm_ in obsnorm:
+                for key, value in obsnorm_.items():
+                    obsnorm_[key] = (value - self.obs_norm_mean_dict[key]) / self.obs_norm_std_dict[key]
+            return obsnorm
+        else:
+            for key, value in obsnorm.items():
+                obsnorm[key] = (value - self.obs_norm_mean_dict[key]) / self.obs_norm_std_dict[key]
+            return obsnorm
+
 
     def __len__(self):
         return len(self.weight_dicts_list)
@@ -115,7 +146,10 @@ class ShapedEliteDataset(Dataset):
             if self.normalize_obs:
                 weights_dict = self._integrate_obs_normalizer(weights_dict, obs_normalizer, self.inp_coef_w, self.inp_coef_b)
             weight_dicts.append(weights_dict)
-            obsnorms.append(obs_normalizer.state_dict())
+            obs_norm_state_dict = obs_normalizer.state_dict()
+            obs_norm_state_dict['obs_rms.std'] = torch.sqrt(obs_norm_state_dict['obs_rms.var']+ 1e-8)
+            obs_norm_state_dict['obs_rms.logstd'] = torch.log(obs_norm_state_dict['obs_rms.std'])
+            obsnorms.append(obs_norm_state_dict)
         return weight_dicts, obsnorms
 
     @staticmethod

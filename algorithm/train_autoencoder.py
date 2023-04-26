@@ -88,7 +88,9 @@ def evaluate_agent_quality(env_cfg: dict,
                            normalize_obs: bool = False,
                            center_data: bool = False,
                            weight_denormalizer = None,
-                           weight_normalizer = None,):
+                           weight_normalizer = None,
+                           obsnorm_denormalizer = None,
+                           obsnorm_normalizer = None,):
 
     obs_dim = vec_env.single_observation_space.shape[0]
     action_shape = vec_env.single_action_space.shape
@@ -114,8 +116,15 @@ def evaluate_agent_quality(env_cfg: dict,
             
 
         if normalize_obs:
-            gt_norm_dict = {'obs_normalizer.' + key: obs_norms[key][k] for key in obs_norms.keys()}
-            rec_norm_dict = {'obs_normalizer.' + key: obs_norms[key][k] for key in obs_norms.keys()}
+            obs_norms_cpy = {'obs_rms.mean' : obs_norms['obs_rms.mean'][k],
+                'obs_rms.var' : obs_norms['obs_rms.var'][k],
+                'obs_rms.count' : obs_norms['obs_rms.count'][k],}
+            
+            if center_data:
+                obsnorm_denormalizer(obs_norms_cpy)
+
+            gt_norm_dict = {'obs_normalizer.' + key: obs_norms_cpy[key] for key in obs_norms_cpy.keys()}
+            rec_norm_dict = {'obs_normalizer.' + key: obs_norms_cpy[key] for key in obs_norms_cpy.keys()}
             actor_weights.update(gt_norm_dict)
             recon_actor_weights.update(rec_norm_dict)
 
@@ -173,7 +182,9 @@ def shaped_elites_dataset_factory(env_name,
                                   inp_coefs: tuple[float] = (1.0, 1.0),
                                   center_data: bool = False,
                                   weight_mean_dict: Optional[dict] = None,
-                                  weight_std_dict: Optional[dict] = None):
+                                  weight_std_dict: Optional[dict] = None,
+                                  obsnorm_mean_dict: Optional[dict] = None,
+                                  obsnorm_std_dict: Optional[dict] = None,):
     archive_data_path = f'data/{env_name}'
     archive_dfs = []
 
@@ -213,12 +224,18 @@ def shaped_elites_dataset_factory(env_name,
                                          eval_batch_size=batch_size if is_eval else None,
                                          center_data=center_data,
                                          weight_mean_dict=weight_mean_dict,
-                                         weight_std_dict=weight_std_dict)
+                                         weight_std_dict=weight_std_dict,
+                                         obsnorm_mean_dict=obsnorm_mean_dict,
+                                         obsnorm_std_dict=obsnorm_std_dict)
 
     weights_mean, weights_std = s_elite_dataset.weight_mean_dict, s_elite_dataset.weight_std_dict
     denormalizer_weight = s_elite_dataset.denormalize_weights
     normalizer_weight = s_elite_dataset.normalize_weights
-    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs, weights_mean, weights_std, denormalizer_weight, normalizer_weight
+    obsnorm_mean, obsnorm_std = s_elite_dataset.obs_norm_mean_dict, s_elite_dataset.obs_norm_std_dict
+    denormalizer_obsnorm = s_elite_dataset.denormalize_obsnorm
+    normalizer_obsnorm = s_elite_dataset.normalize_obsnorm
+    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs, weights_mean, \
+        weights_std, denormalizer_weight, normalizer_weight, obsnorm_mean, obsnorm_std, denormalizer_obsnorm, normalizer_obsnorm
 
 
 def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor]):
@@ -345,12 +362,13 @@ def train_autoencoder():
     inp_coefs = (args.inp_coef_w, args.inp_coef_b)
 
     train_batch_size, test_batch_size = 32, 8
-    dataloader, train_archive, weight_mean_dict, weight_std_dict, weight_denormalizer, weight_normalizer = shaped_elites_dataset_factory( \
+    dataloader, train_archive, weight_mean_dict, weight_std_dict, weight_denormalizer, weight_normalizer, obsnorm_mean_dict, obsnorm_std_dict, obsnorm_denormalizer, obsnorm_normalizer = shaped_elites_dataset_factory( \
                                                 args.env_name, args.merge_obsnorm, batch_size=train_batch_size, \
                                                 is_eval=False, inp_coefs=inp_coefs, center_data=args.center_data)
-    test_dataloader, test_archive, _, _, _, _ = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=test_batch_size, \
+    test_dataloader, test_archive, _, _, _, _, _, _, _, _ = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=test_batch_size, \
                                                 is_eval=True,  inp_coefs=inp_coefs, center_data=args.center_data, \
-                                                    weight_mean_dict=weight_mean_dict, weight_std_dict=weight_std_dict)
+                                                    weight_mean_dict=weight_mean_dict, weight_std_dict=weight_std_dict, \
+                                                        obsnorm_mean_dict=obsnorm_mean_dict, obsnorm_std_dict=obsnorm_std_dict)
 
     # log.debug(f'{weight_mean_dict=}, {weight_std_dict=}')
     dataset_kwargs = {
@@ -358,6 +376,8 @@ def train_autoencoder():
         'center_data': args.center_data,
         'weight_denormalizer': weight_denormalizer,
         'weight_normalizer': weight_normalizer,
+        'obsnorm_denormalizer': obsnorm_denormalizer,
+        'obsnorm_normalizer': obsnorm_normalizer,
     }
 
     rollouts_per_agent = 10  # to align ourselves with baselines
