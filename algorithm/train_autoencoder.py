@@ -535,13 +535,11 @@ def train_autoencoder():
             writer.add_scalar("Loss/kl_loss", epoch_kl_loss / len(dataloader), global_step+1)
             writer.add_scalar("Loss/perceptual_loss", epoch_perceptual_loss / len(dataloader), global_step+1)
             writer.add_scalar("Loss/norm_mse_loss", epoch_norm_mse_loss / len(dataloader), global_step+1)
-            writer.add_scalar("Loss/norm_kl_loss", epoch_norm_kl_loss / len(dataloader), global_step+1)
             wandb.log({
                 'Loss/mse_loss': epoch_mse_loss / len(dataloader),
                 'Loss/kl_loss': epoch_kl_loss / len(dataloader),
                 'Loss/perceptual_loss': epoch_perceptual_loss / len(dataloader),
                 'Loss/norm_mse_loss': epoch_norm_mse_loss / len(dataloader),
-                'Loss/norm_kl_loss': epoch_norm_kl_loss / len(dataloader),
                 'epoch': epoch + 1,
                 'global_step': global_step + 1
             })
