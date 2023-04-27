@@ -65,6 +65,7 @@ def parse_args():
     parser.add_argument('--reevaluate_archive_vae', type=lambda x: bool(strtobool(x)), default=True, help='Evaluate the VAE on the entire archive every 50 epochs')
     parser.add_argument('--load_from_checkpoint', type=str, default=None, help='Load an existing model from a checkpoint for additional training')
     parser.add_argument('--center_data', type=lambda x: bool(strtobool(x)), default=False, help='Zero center the policy dataset with unit variance')
+    parser.add_argument('--clip_obs_rew', type=lambda x: bool(strtobool(x)), default=False, help='Clip obs and rewards b/w -10 and 10 in brax. Set to true if the PPGA archive trained with clipping enabled')
 
     args = parser.parse_args()
     return args
@@ -365,6 +366,7 @@ def train_autoencoder():
             'env_batch_size': test_batch_size * rollouts_per_agent,
             'num_dims': shared_params[args.env_name]['env_cfg']['num_dims'],
             'seed': 0,
+            'clip_obs_rew': args.clip_obs_rew
         })
 
         env = make_vec_env_brax(env_cfg)
