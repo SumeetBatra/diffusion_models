@@ -53,9 +53,6 @@ def parse_args():
     parser.add_argument('--wandb_tag', type=str, default='halfcheetah')
     parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
     # loss function hyperparams
-    parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=False)
-    parser.add_argument('--inp_coef_w', type=float, default=1)
-    parser.add_argument('--inp_coef_b', type=float, default=1)
     parser.add_argument('--kl_coef', type=float, default=1e-6)
     parser.add_argument('--use_perceptual_loss', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--perceptual_loss_coef', type=float, default=1e-4)
@@ -85,7 +82,6 @@ def evaluate_agent_quality(env_cfg: dict,
                            obs_norms: dict[str, torch.Tensor],
                            rec_obs_norms: dict[str, torch.Tensor],
                            test_batch_size: int,
-                           inp_coefs: tuple[float],
                            device: str,
                            normalize_obs: bool = False,
                            center_data: bool = False,
@@ -96,7 +92,6 @@ def evaluate_agent_quality(env_cfg: dict,
 
     obs_dim = vec_env.single_observation_space.shape[0]
     action_shape = vec_env.single_action_space.shape
-    (inp_coef_w, inp_coef_b) = inp_coefs
 
     # load all relevant data for ground truth and reconstructed agents
     gt_agents, rec_agents = [], []
@@ -106,11 +101,6 @@ def evaluate_agent_quality(env_cfg: dict,
 
         actor_weights = {key: gt_params_batch[key][k] for key in gt_params_batch.keys() if 'actor' in key}
         recon_actor_weights = rec_policies[k].state_dict()
-
-        actor_weights['actor_mean.0.weight'] *= (1 / inp_coef_w)
-        actor_weights['actor_mean.0.bias'] *= (1 / inp_coef_b)
-        recon_actor_weights['actor_mean.0.weight'] *= (1 / inp_coef_w)
-        recon_actor_weights['actor_mean.0.bias'] *= (1 / inp_coef_b)
 
         if center_data:
             weight_denormalizer(actor_weights)
@@ -183,10 +173,8 @@ def evaluate_agent_quality(env_cfg: dict,
 
 
 def shaped_elites_dataset_factory(env_name,
-                                  merge_obsnorm = True,
                                   batch_size=32,
                                   is_eval=False,
-                                  inp_coefs: tuple[float] = (1.0, 1.0),
                                   center_data: bool = False,
                                   weight_mean_dict: Optional[dict] = None,
                                   weight_std_dict: Optional[dict] = None,
@@ -234,9 +222,7 @@ def shaped_elites_dataset_factory(env_name,
                                          obs_dim=obs_dim,
                                          action_shape=action_shape,
                                          device=device,
-                                         normalize_obs=merge_obsnorm,
                                          is_eval=is_eval,
-                                         inp_coefs=inp_coefs,
                                          eval_batch_size=batch_size if is_eval else None,
                                          center_data=center_data,
                                          weight_mean_dict=weight_mean_dict,
@@ -386,20 +372,17 @@ def train_autoencoder():
     mse_loss_func = mse_loss_from_weights_dict
     norm_mse_loss_func = mse_from_norm_dict
 
-    inp_coefs = (args.inp_coef_w, args.inp_coef_b)
-
     train_batch_size, test_batch_size = 32, 50
     dataloader, train_archive, weight_mean_dict, weight_std_dict, weight_denormalizer, weight_normalizer, obsnorm_mean_dict, obsnorm_std_dict, obsnorm_denormalizer, obsnorm_normalizer = shaped_elites_dataset_factory( \
-                                                args.env_name, args.merge_obsnorm, batch_size=train_batch_size, \
-                                                is_eval=False, inp_coefs=inp_coefs, center_data=args.center_data)
-    test_dataloader, test_archive, _, _, _, _, _, _, _, _ = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=test_batch_size, \
-                                                is_eval=True,  inp_coefs=inp_coefs, center_data=args.center_data, \
+                                                args.env_name, batch_size=train_batch_size, \
+                                                is_eval=False, center_data=args.center_data)
+    test_dataloader, test_archive, _, _, _, _, _, _, _, _ = shaped_elites_dataset_factory(args.env_name, batch_size=test_batch_size, \
+                                                is_eval=True,  center_data=args.center_data, \
                                                     weight_mean_dict=weight_mean_dict, weight_std_dict=weight_std_dict, \
                                                         obsnorm_mean_dict=obsnorm_mean_dict, obsnorm_std_dict=obsnorm_std_dict)
 
     # log.debug(f'{weight_mean_dict=}, {weight_std_dict=}')
     dataset_kwargs = {
-        'inp_coefs': inp_coefs,
         'center_data': args.center_data,
         'weight_denormalizer': weight_denormalizer,
         'weight_normalizer': weight_normalizer,
@@ -442,7 +425,7 @@ def train_autoencoder():
                                             rec_obsnorm, 
                                             test_batch_size, 
                                             device=device, 
-                                            normalize_obs=not args.merge_obsnorm, 
+                                            normalize_obs=True, 
                                             **dataset_kwargs)
                 
                 # now try to sample a policy with just measures
@@ -457,7 +440,7 @@ def train_autoencoder():
                                                 rec_obsnorm,
                                                 test_batch_size, 
                                                 device=device, 
-                                                normalize_obs=not args.merge_obsnorm, 
+                                                normalize_obs=True, 
                                                 **dataset_kwargs)
 
                     for key, val in info2.items():
@@ -473,7 +456,7 @@ def train_autoencoder():
                                                                             image_path = args.image_path, 
                                                                             suffix = str(epoch), 
                                                                             ignore_first=True,
-                                                                            normalize_obs=not args.merge_obsnorm, 
+                                                                            normalize_obs=True, 
                                                                             **dataset_kwargs, clip_obs_rew=args.clip_obs_rew)
                     for key, val in subsample_results['Reconstructed'].items():
                         info['Archive/' + key] = val
@@ -530,8 +513,6 @@ def train_autoencoder():
             optimizer.step()
             global_step += 1
 
-            loss_info['scaled_actor_mean.0.weight'] = (1/((inp_coefs[0])**2))*loss_info['actor_mean.0.weight']
-            loss_info['scaled_actor_mean.0.bias'] = (1/((inp_coefs[1])**2))*loss_info['actor_mean.0.bias']
             epoch_mse_loss += policy_mse_loss.item()
             epoch_kl_loss += kl_loss.item()
             epoch_norm_mse_loss += norm_mse_loss.item()

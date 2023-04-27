@@ -24,9 +24,7 @@ class ShapedEliteDataset(Dataset):
                  obs_dim: int,
                  action_shape: Union[tuple, np.ndarray],
                  device: str,
-                 normalize_obs: bool = False,
                  is_eval: bool = False,
-                 inp_coefs: tuple[float] = (1.0, 1.0),
                  eval_batch_size: Optional[int] = 8,
                  center_data: bool = False,
                  weight_mean_dict: Optional[dict] = None,
@@ -39,11 +37,9 @@ class ShapedEliteDataset(Dataset):
         self.action_shape = action_shape
         self.device = device
         self.is_eval = is_eval
-        (self.inp_coef_w, self.inp_coef_b) = inp_coefs if normalize_obs else (1.0, 1.0)
 
         self.measures_list = archive_df.filter(regex='measure*').to_numpy()
         self.metadata = archive_df.filter(regex='metadata*').to_numpy()
-        self.normalize_obs = normalize_obs
         self.objective_list = archive_df['objective'].to_numpy()
 
         elites_list = archive_df.filter(regex='solution*').to_numpy()
@@ -136,38 +132,19 @@ class ShapedEliteDataset(Dataset):
         weight_dicts = []
         obsnorms = []
         for i, params in tqdm(enumerate(elites_list)):
-            weights_dict = Actor(self.obs_dim, self.action_shape, self.normalize_obs, True).to(self.device).get_deserialized_weights(params)
+            weights_dict = Actor(self.obs_dim, self.action_shape, False, True).to(self.device).get_deserialized_weights(params)
             normalize_obs = self.metadata[i][0]['obs_normalizer']
             if isinstance(normalize_obs, dict):
                 obs_normalizer = ObsNormalizer(self.obs_dim).to(self.device)
                 obs_normalizer.load_state_dict(normalize_obs)
             else:
                 obs_normalizer = normalize_obs
-            if self.normalize_obs:
-                weights_dict = self._integrate_obs_normalizer(weights_dict, obs_normalizer, self.inp_coef_w, self.inp_coef_b)
             weight_dicts.append(weights_dict)
             obs_norm_state_dict = obs_normalizer.state_dict()
             obs_norm_state_dict['obs_rms.std'] = torch.sqrt(obs_norm_state_dict['obs_rms.var']+ 1e-8)
             obs_norm_state_dict['obs_rms.logstd'] = torch.log(obs_norm_state_dict['obs_rms.std'])
             obsnorms.append(obs_norm_state_dict)
         return weight_dicts, obsnorms
-
-    @staticmethod
-    def _integrate_obs_normalizer(weights_dict, obs_normalizer, inp_coef_w, inp_coef_b):
-        w_in = weights_dict['actor_mean.0.weight']
-        b_in = weights_dict['actor_mean.0.bias']
-        mean, var = obs_normalizer.obs_rms.mean, obs_normalizer.obs_rms.var
-
-        w_new = (w_in / torch.sqrt(var + 1e-8))
-        b_new = (b_in - (mean / torch.sqrt(var + 1e-8)) @ w_in.T)
-        # uncomment this to empirically determine what the input layer scaling factors should be
-        # print(f'{torch.norm(w_in, p=2)/torch.norm(w_new, p=2)=}, {torch.norm(b_in, p=2)/torch.norm(b_new, p=2)=}')
-        w_new *= inp_coef_w
-        b_new *= inp_coef_b
-        weights_dict['actor_mean.0.weight'] = w_new
-        weights_dict['actor_mean.0.bias'] = b_new
-        return weights_dict
-
 
 
 

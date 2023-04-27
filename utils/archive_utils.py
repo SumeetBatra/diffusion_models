@@ -124,7 +124,6 @@ def evaluate(vec_agent, vec_env, num_dims, use_action_means=True, normalize_obs=
 
 
 def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, device,
-                            inp_coefs: tuple[float] = (1.0, 1.0),
                             center_data: bool = False,
                             weight_denormalizer = None,
                             weight_normalizer = None,
@@ -206,7 +205,6 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                             scale_factor=None,
                             diffusion_model=None,
                             save_path=None,
-                            inp_coefs: tuple[float] = (1.0, 1.0),
                             center_data: bool = False,
                             weight_denormalizer = None,
                             weight_normalizer = None,
@@ -254,7 +252,7 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
 
         if reconstructed_agents:
             if diffusion_model is None:
-                agent_batch = reconstruct_agents_from_vae(agent_batch, vae, device, inp_coefs = inp_coefs,
+                agent_batch = reconstruct_agents_from_vae(agent_batch, vae, device,
                                                           center_data=center_data,
                                                           weight_denormalizer=weight_denormalizer,
                                                           weight_normalizer=weight_normalizer,
