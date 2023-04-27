@@ -413,72 +413,73 @@ def train_autoencoder():
     for epoch in range(epochs + 1):
 
         if args.track_agent_quality and epoch % 10 == 0:
-            # get a ground truth policy and evaluate it. Then get the reconstructed policy and compare its
-            # performance and behavior to the ground truth
-            gt_params, gt_measure, obsnorms = next(iter(test_dataloader))
-            gt_measure = gt_measure.to(device).to(torch.float32)
+            with torch.no_grad():
+                # get a ground truth policy and evaluate it. Then get the reconstructed policy and compare its
+                # performance and behavior to the ground truth
+                gt_params, gt_measure, obsnorms = next(iter(test_dataloader))
+                gt_measure = gt_measure.to(device).to(torch.float32)
 
-            if args.conditional:
-                rec_policies, _ = model(gt_params, obsnorms, gt_measure)
-            else:
-                (rec_policies, rec_obsnorm), _ = model(gt_params, obsnorms)
+                if args.conditional:
+                    rec_policies, _ = model(gt_params, obsnorms, gt_measure)
+                else:
+                    (rec_policies, rec_obsnorm), _ = model(gt_params, obsnorms)
 
-            info = evaluate_agent_quality(env_cfg, 
-                                          env, gt_params, 
-                                          rec_policies, 
-                                          obsnorms, 
-                                          rec_obsnorm, 
-                                          test_batch_size, 
-                                          device=device, 
-                                          normalize_obs=not args.merge_obsnorm, 
-                                          **dataset_kwargs)
-            
-            # now try to sample a policy with just measures
-            if args.conditional:
-                rec_policies, _ = model(None, gt_measure)
-
-                info2 = evaluate_agent_quality(env_cfg, 
-                                               env, 
-                                               gt_params, 
-                                               rec_policies, 
-                                               obsnorms, 
-                                               rec_obsnorm,
-                                               test_batch_size, 
-                                               device=device, 
-                                               normalize_obs=not args.merge_obsnorm, 
-                                               **dataset_kwargs)
-
-                for key, val in info2.items():
-                    info['Conditional_' + key] = val
-
-            if epoch % 50 == 0 and args.reevaluate_archive_vae:
-                # evaluate the model on the entire archive
-                print('Evaluating model on entire archive...')
-                subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name, 
-                                                                          archive_df=train_archive[0], 
-                                                                          model=model, 
-                                                                          N=-1, 
-                                                                          image_path = args.image_path, 
-                                                                          suffix = str(epoch), 
-                                                                          ignore_first=True,
-                                                                          normalize_obs=not args.merge_obsnorm, 
-                                                                          **dataset_kwargs)
-                for key, val in subsample_results['Reconstructed'].items():
-                    info['Archive/' + key] = val
+                info = evaluate_agent_quality(env_cfg, 
+                                            env, gt_params, 
+                                            rec_policies, 
+                                            obsnorms, 
+                                            rec_obsnorm, 
+                                            test_batch_size, 
+                                            device=device, 
+                                            normalize_obs=not args.merge_obsnorm, 
+                                            **dataset_kwargs)
                 
-            # log items to tensorboard and wandb
-            if args.use_wandb:
-                for key, val in info.items():
-                    writer.add_scalar(key, val, global_step + 1)
+                # now try to sample a policy with just measures
+                if args.conditional:
+                    rec_policies, _ = model(None, gt_measure)
 
-                info.update({
-                    'global_step': global_step + 1,
-                    'epoch': epoch + 1
-                })
+                    info2 = evaluate_agent_quality(env_cfg, 
+                                                env, 
+                                                gt_params, 
+                                                rec_policies, 
+                                                obsnorms, 
+                                                rec_obsnorm,
+                                                test_batch_size, 
+                                                device=device, 
+                                                normalize_obs=not args.merge_obsnorm, 
+                                                **dataset_kwargs)
 
-                wandb.log(info)
-                if args.reevaluate_archive_vae:
-                    wandb.log({'Archive/recon_image': wandb.Image(image_results['Reconstructed'], caption=f"Epoch {epoch + 1}")})
+                    for key, val in info2.items():
+                        info['Conditional_' + key] = val
+
+                if epoch % 50 == 0 and args.reevaluate_archive_vae:
+                    # evaluate the model on the entire archive
+                    print('Evaluating model on entire archive...')
+                    subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name, 
+                                                                            archive_df=train_archive[0], 
+                                                                            model=model, 
+                                                                            N=-1, 
+                                                                            image_path = args.image_path, 
+                                                                            suffix = str(epoch), 
+                                                                            ignore_first=True,
+                                                                            normalize_obs=not args.merge_obsnorm, 
+                                                                            **dataset_kwargs)
+                    for key, val in subsample_results['Reconstructed'].items():
+                        info['Archive/' + key] = val
+                    
+                # log items to tensorboard and wandb
+                if args.use_wandb:
+                    for key, val in info.items():
+                        writer.add_scalar(key, val, global_step + 1)
+
+                    info.update({
+                        'global_step': global_step + 1,
+                        'epoch': epoch + 1
+                    })
+
+                    wandb.log(info)
+                    if args.reevaluate_archive_vae:
+                        wandb.log({'Archive/recon_image': wandb.Image(image_results['Reconstructed'], caption=f"Epoch {epoch + 1}")})
 
         epoch_mse_loss = 0
         epoch_kl_loss = 0
