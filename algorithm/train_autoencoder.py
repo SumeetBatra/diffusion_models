@@ -65,6 +65,7 @@ def parse_args():
     parser.add_argument('--reevaluate_archive_vae', type=lambda x: bool(strtobool(x)), default=True, help='Evaluate the VAE on the entire archive every 50 epochs')
     parser.add_argument('--load_from_checkpoint', type=str, default=None, help='Load an existing model from a checkpoint for additional training')
     parser.add_argument('--center_data', type=lambda x: bool(strtobool(x)), default=True, help='Zero center the policy dataset with unit variance')
+    parser.add_argument('--clip_obs_rew', type=lambda x: bool(strtobool(x)), default=False, help='Clip obs and rewards b/w -10 and 10 in brax. Set to true if the PPGA archive trained with clipping enabled')
 
     args = parser.parse_args()
     return args
@@ -211,11 +212,20 @@ def shaped_elites_dataset_factory(env_name,
         soln_dim = archive_df.filter(regex='solution*').to_numpy().shape[1]
         cells = batch_size
         ranges = [(0.0, 1.0)] * shared_params[env_name]['env_cfg']['num_dims']
+
+        # load centroids if they were previously calculated. Maintains consistency across runs
+        centroids = None
+        centroids_path = f'results/{env_name}/centroids.npy'
+        if os.path.exists(centroids_path):
+            log.info(f'Existing centroids found at {centroids_path}. Loading centroids...')
+            centroids = np.load(centroids_path)
         cvt_archive = archive_df_to_archive(archive_df,
                                             type='cvt',
                                             solution_dim=soln_dim,
                                             cells=cells,
-                                            ranges=ranges)
+                                            ranges=ranges,
+                                            custom_centroids=centroids)
+        np.save(centroids_path, cvt_archive.centroids)
         # overload the archive_dfs variable with the new archive_df containing only solutions corresponding to the
         # centroids
         archive_dfs = [cvt_archive.as_pandas(include_solutions=True, include_metadata=True)]
@@ -404,6 +414,7 @@ def train_autoencoder():
             'env_batch_size': test_batch_size * rollouts_per_agent,
             'num_dims': shared_params[args.env_name]['env_cfg']['num_dims'],
             'seed': 0,
+            'clip_obs_rew': args.clip_obs_rew
         })
 
         env = make_vec_env_brax(env_cfg)
@@ -463,7 +474,7 @@ def train_autoencoder():
                                                                             suffix = str(epoch), 
                                                                             ignore_first=True,
                                                                             normalize_obs=not args.merge_obsnorm, 
-                                                                            **dataset_kwargs)
+                                                                            **dataset_kwargs, clip_obs_rew=args.clip_obs_rew)
                     for key, val in subsample_results['Reconstructed'].items():
                         info['Archive/' + key] = val
                     

@@ -24,7 +24,7 @@ from envs.brax_custom.brax_env import make_vec_env_brax
 
 
 def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 100, image_path: str = None,
-                            suffix: str = None, ignore_first: bool = False,
+                            suffix: str = None, ignore_first: bool = False, clip_obs_rew: bool = False,
                             normalize_obs: bool = False,
                             inp_coefs: tuple[float] = (1.0, 1.0),
                             center_data: bool = False,
@@ -59,6 +59,7 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
 
     env_cfg = AttrDict(shared_params[env_name]['env_cfg'])
     env_cfg.seed = 1111
+    env_cfg.clip_obs_rew = clip_obs_rew
 
     if N != -1:
         archive_df = archive_df.sample(N)
