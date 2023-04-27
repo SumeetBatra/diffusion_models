@@ -109,22 +109,30 @@ def evaluate(vec_agent, vec_env, num_dims, use_action_means=True, normalize_obs=
 
     # the first done in each env is where that trajectory ends
     traj_lengths = torch.argmax(all_dones, dim=0) + 1
-    avg_traj_lengths = traj_lengths.to(torch.float32).reshape(
-        (vec_agent.num_models, vec_env.num_envs // vec_agent.num_models)).mean(dim=1).cpu().numpy()
+    # avg_traj_lengths = traj_lengths.to(torch.float32).reshape(
+        # (vec_agent.num_models, vec_env.num_envs // vec_agent.num_models)).mean(dim=1).cpu().numpy()
+    avg_traj_lengths = traj_lengths.to(torch.float32).cpu().numpy()
     # TODO: figure out how to vectorize this
     for i in range(vec_env.num_envs):
         measures[i] = measures_acc[:traj_lengths[i], i].sum(dim=0) / traj_lengths[i]
-    measures = measures.reshape(vec_agent.num_models, vec_env.num_envs // vec_agent.num_models, -1).mean(dim=1)
+    # measures = measures.reshape(vec_agent.num_models, vec_env.num_envs // vec_agent.num_models, -1).mean(dim=1)
 
     metadata = np.array([{'traj_length': t} for t in avg_traj_lengths])
-    total_reward = total_reward.reshape((vec_agent.num_models, vec_env.num_envs // vec_agent.num_models))
-    total_reward = total_reward.mean(axis=1)
+    # total_reward = total_reward.reshape((vec_agent.num_models, vec_env.num_envs // vec_agent.num_models))
+    # total_reward = total_reward.mean(axis=1)
     return total_reward.reshape(-1, ), measures.reshape(-1, num_dims).detach().cpu().numpy(), metadata
 
 
-def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, device):
+def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, device,
+                            inp_coefs: tuple[float] = (1.0, 1.0),
+                            center_data: bool = False,
+                            weight_denormalizer = None,
+                            weight_normalizer = None,
+                            obsnorm_denormalizer = None,
+                            obsnorm_normalizer = None,):
     batch_size = len(original_agents)
     weights_dict = {}
+    obsnorm_dict = {}
     state_dict = original_agents[0].state_dict()
     for key in state_dict.keys():
         if 'weight' in key or 'bias' in key or 'logstd' in key:
@@ -134,11 +142,40 @@ def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, de
                 params_batch.append(agent.state_dict()[key])
             params_batch = torch.vstack(params_batch).reshape(batch_size, *tuple(shape))
             weights_dict[key] = params_batch
+        
+        if 'obs_normalizer' in key:
+            params_batch = []
+            for agent in original_agents:
+                params_batch.append(agent.state_dict()[key])
+            params_batch = torch.vstack(params_batch)
+            obsnorm_dict[key] = params_batch
+    
+    gt_obsnorm_dict = {
+        'obs_rms.mean': obsnorm_dict['obs_normalizer.obs_rms.mean'],
+        'obs_rms.logstd' : torch.log(torch.sqrt(obsnorm_dict['obs_normalizer.obs_rms.var']+ 1e-8))
+    }
 
-    rec_agents, _ = vae(weights_dict)
+    
+    if center_data:
+        weights_dict = weight_normalizer(weights_dict)
+        gt_obsnorm_dict = obsnorm_normalizer(gt_obsnorm_dict)
+
+    (rec_agents, rec_obsnorms), _ = vae(weights_dict, gt_obsnorm_dict)
     if original_agents[0].obs_normalizer is not None:
-        for orig_agent, rec_agent in zip(original_agents, rec_agents):
+        for i, (orig_agent, rec_agent) in enumerate(zip(original_agents, rec_agents)):
+
+            rec_obsnorm = {key: rec_obsnorms[key][i] for key in rec_obsnorms.keys()}
+            if center_data:
+                rec_agent_state_dict = rec_agent.state_dict()
+                weight_denormalizer(rec_agent_state_dict)
+
+                obsnorm_denormalizer(rec_obsnorm)
+            
+            rec_agent.load_state_dict(rec_agent_state_dict)
+
             rec_agent.obs_normalizer = orig_agent.obs_normalizer
+            rec_agent.obs_normalizer.obs_rms.mean = rec_obsnorm['obs_rms.mean']
+            rec_agent.obs_normalizer.obs_rms.var = torch.exp(2 * rec_obsnorm['obs_rms.logstd'])
 
     return rec_agents
 
@@ -168,7 +205,14 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                             sampler=None,
                             scale_factor=None,
                             diffusion_model=None,
-                            save_path=None):
+                            save_path=None,
+                            inp_coefs: tuple[float] = (1.0, 1.0),
+                            center_data: bool = False,
+                            weight_denormalizer = None,
+                            weight_normalizer = None,
+                            obsnorm_denormalizer = None,
+                            obsnorm_normalizer = None,
+                            ):
     num_sols = len(original_archive)
     print(f'{num_sols=}')
     env_cfg.env_batch_size = 50 * solution_batch_size
@@ -210,7 +254,12 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
 
         if reconstructed_agents:
             if diffusion_model is None:
-                agent_batch = reconstruct_agents_from_vae(agent_batch, vae, device)
+                agent_batch = reconstruct_agents_from_vae(agent_batch, vae, device, inp_coefs = inp_coefs,
+                                                          center_data=center_data,
+                                                          weight_denormalizer=weight_denormalizer,
+                                                          weight_normalizer=weight_normalizer,
+                                                          obsnorm_denormalizer=obsnorm_denormalizer,
+                                                          obsnorm_normalizer=obsnorm_normalizer)
             else:
                 agent_batch = reconstruct_agents_from_ldm(agent_batch, measure_batch, vae, device, sampler,
                                                           scale_factor, diffusion_model)
@@ -245,7 +294,7 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                               qd_offset=reward_offset[env_cfg.env_name])
     # add the re-evaluated solutions to the new archive
     new_archive.add(
-        np.ones((len(original_archive), 1)),
+        np.ones((len(all_objs), 1)),
         all_objs,
         all_measures,
         all_metadata

@@ -64,7 +64,7 @@ def parse_args():
     # misc
     parser.add_argument('--reevaluate_archive_vae', type=lambda x: bool(strtobool(x)), default=True, help='Evaluate the VAE on the entire archive every 50 epochs')
     parser.add_argument('--load_from_checkpoint', type=str, default=None, help='Load an existing model from a checkpoint for additional training')
-    parser.add_argument('--center_data', type=lambda x: bool(strtobool(x)), default=False, help='Zero center the policy dataset with unit variance')
+    parser.add_argument('--center_data', type=lambda x: bool(strtobool(x)), default=True, help='Zero center the policy dataset with unit variance')
     parser.add_argument('--clip_obs_rew', type=lambda x: bool(strtobool(x)), default=False, help='Clip obs and rewards b/w -10 and 10 in brax. Set to true if the PPGA archive trained with clipping enabled')
 
     args = parser.parse_args()
@@ -83,13 +83,16 @@ def evaluate_agent_quality(env_cfg: dict,
                            gt_params_batch: dict[str, torch.Tensor],
                            rec_policies: list[Actor],
                            obs_norms: dict[str, torch.Tensor],
+                           rec_obs_norms: dict[str, torch.Tensor],
                            test_batch_size: int,
                            inp_coefs: tuple[float],
                            device: str,
                            normalize_obs: bool = False,
                            center_data: bool = False,
-                           elites_mean: Optional[float] = None,
-                           elites_std: Optional[float] = None):
+                           weight_denormalizer = None,
+                           weight_normalizer = None,
+                           obsnorm_denormalizer = None,
+                           obsnorm_normalizer = None,):
 
     obs_dim = vec_env.single_observation_space.shape[0]
     action_shape = vec_env.single_action_space.shape
@@ -99,12 +102,10 @@ def evaluate_agent_quality(env_cfg: dict,
     gt_agents, rec_agents = [], []
     for k in range(test_batch_size):
         gt_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device)
-        rec_agent = rec_policies[k].to(device)
-        rec_agent.obs_normalizer = gt_agent.obs_normalizer
-        rec_agent.actor_logstd = gt_agent.actor_logstd
+        rec_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device)
 
         actor_weights = {key: gt_params_batch[key][k] for key in gt_params_batch.keys() if 'actor' in key}
-        recon_actor_weights = rec_agent.state_dict()
+        recon_actor_weights = rec_policies[k].state_dict()
 
         actor_weights['actor_mean.0.weight'] *= (1 / inp_coef_w)
         actor_weights['actor_mean.0.bias'] *= (1 / inp_coef_b)
@@ -112,16 +113,29 @@ def evaluate_agent_quality(env_cfg: dict,
         recon_actor_weights['actor_mean.0.bias'] *= (1 / inp_coef_b)
 
         if center_data:
-            for (n1, p1), (n2, p2) in zip(actor_weights.items(), recon_actor_weights.items()):
-                actor_weights[n1] = (p1 * (elites_std - 1e-9)) + elites_mean
-                recon_actor_weights[n2] = (p2 * (elites_std - 1e-9)) + elites_mean
+            weight_denormalizer(actor_weights)
+            weight_denormalizer(recon_actor_weights)
+            
 
         if normalize_obs:
-            gt_norm_dict = {'obs_normalizer.' + key: obs_norms[key][k] for key in obs_norms.keys()}
-            std_norm_dict = {key: obs_norms[key][k] for key in obs_norms.keys()}
+            obs_norms_cpy = {'obs_rms.mean' : obs_norms['obs_rms.mean'][k],
+                'obs_rms.var' : obs_norms['obs_rms.var'][k],
+                'obs_rms.count' : obs_norms['obs_rms.count'][k],}
+
+            rec_obs_norms_cpy = {'obs_rms.mean' : rec_obs_norms['obs_rms.mean'][k],
+                            'obs_rms.var' : torch.exp(rec_obs_norms['obs_rms.logstd'][k] * 2),
+                            'obs_rms.count' : obs_norms['obs_rms.count'][k],}
+            
+            if center_data:
+                obsnorm_denormalizer(obs_norms_cpy)
+                obsnorm_denormalizer(rec_obs_norms_cpy)
+
+            gt_norm_dict = {'obs_normalizer.' + key: obs_norms_cpy[key] for key in obs_norms_cpy.keys()}
+            rec_norm_dict = {'obs_normalizer.' + key: rec_obs_norms_cpy[key] for key in rec_obs_norms_cpy.keys()}
             actor_weights.update(gt_norm_dict)
-            gt_agent.obs_normalizer.load_state_dict(std_norm_dict)
-            rec_agent.obs_normalizer.load_state_dict(std_norm_dict)
+            recon_actor_weights.update(rec_norm_dict)
+
+        recon_actor_weights['actor_logstd'] = actor_weights['actor_logstd']
 
         gt_agent.load_state_dict(actor_weights)
         rec_agent.load_state_dict(recon_actor_weights)
@@ -174,8 +188,10 @@ def shaped_elites_dataset_factory(env_name,
                                   is_eval=False,
                                   inp_coefs: tuple[float] = (1.0, 1.0),
                                   center_data: bool = False,
-                                  elites_mean: Optional[float] = None,
-                                  elites_std: Optional[float] = None):
+                                  weight_mean_dict: Optional[dict] = None,
+                                  weight_std_dict: Optional[dict] = None,
+                                  obsnorm_mean_dict: Optional[dict] = None,
+                                  obsnorm_std_dict: Optional[dict] = None,):
     archive_data_path = f'data/{env_name}'
     archive_dfs = []
 
@@ -223,12 +239,19 @@ def shaped_elites_dataset_factory(env_name,
                                          inp_coefs=inp_coefs,
                                          eval_batch_size=batch_size if is_eval else None,
                                          center_data=center_data,
-                                         elites_mean=elites_mean,
-                                         elites_std=elites_std)
+                                         weight_mean_dict=weight_mean_dict,
+                                         weight_std_dict=weight_std_dict,
+                                         obsnorm_mean_dict=obsnorm_mean_dict,
+                                         obsnorm_std_dict=obsnorm_std_dict)
 
-    elites_mean, elites_std = s_elite_dataset.elites_mean, s_elite_dataset.elites_std
-
-    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs, elites_mean, elites_std
+    weights_mean, weights_std = s_elite_dataset.weight_mean_dict, s_elite_dataset.weight_std_dict
+    denormalizer_weight = s_elite_dataset.denormalize_weights
+    normalizer_weight = s_elite_dataset.normalize_weights
+    obsnorm_mean, obsnorm_std = s_elite_dataset.obs_norm_mean_dict, s_elite_dataset.obs_norm_std_dict
+    denormalizer_obsnorm = s_elite_dataset.denormalize_obsnorm
+    normalizer_obsnorm = s_elite_dataset.normalize_obsnorm
+    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs, weights_mean, \
+        weights_std, denormalizer_weight, normalizer_weight, obsnorm_mean, obsnorm_std, denormalizer_obsnorm, normalizer_obsnorm
 
 
 def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor]):
@@ -248,6 +271,16 @@ def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor
         loss += key_loss
         loss_info[key] = key_loss.item()
     return loss, loss_info
+
+def mse_from_norm_dict(target_weights_dict: dict, rec_weight_dict: dict):
+    loss = 0
+    loss_info = {}
+    for key in rec_weight_dict.keys():
+        key_loss = F.mse_loss(target_weights_dict[key], rec_weight_dict[key])
+        loss += key_loss
+        loss_info[key] = key_loss.item()
+    return loss, loss_info
+
 
 
 def agent_to_weights_dict(agents: list[Actor]):
@@ -351,21 +384,27 @@ def train_autoencoder():
     optimizer = Adam(model.parameters(), lr=1e-4)
 
     mse_loss_func = mse_loss_from_weights_dict
+    norm_mse_loss_func = mse_from_norm_dict
 
     inp_coefs = (args.inp_coef_w, args.inp_coef_b)
 
     train_batch_size, test_batch_size = 32, 50
-    dataloader, train_archive, elites_mean, elites_std = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=train_batch_size, \
-                                               is_eval=False, inp_coefs=inp_coefs, center_data=args.center_data)
-    test_dataloader, test_archive, _, _ = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=test_batch_size, \
-                                                is_eval=True,  inp_coefs=inp_coefs, center_data=args.center_data, elites_mean=elites_mean, elites_std=elites_std)
+    dataloader, train_archive, weight_mean_dict, weight_std_dict, weight_denormalizer, weight_normalizer, obsnorm_mean_dict, obsnorm_std_dict, obsnorm_denormalizer, obsnorm_normalizer = shaped_elites_dataset_factory( \
+                                                args.env_name, args.merge_obsnorm, batch_size=train_batch_size, \
+                                                is_eval=False, inp_coefs=inp_coefs, center_data=args.center_data)
+    test_dataloader, test_archive, _, _, _, _, _, _, _, _ = shaped_elites_dataset_factory(args.env_name, args.merge_obsnorm, batch_size=test_batch_size, \
+                                                is_eval=True,  inp_coefs=inp_coefs, center_data=args.center_data, \
+                                                    weight_mean_dict=weight_mean_dict, weight_std_dict=weight_std_dict, \
+                                                        obsnorm_mean_dict=obsnorm_mean_dict, obsnorm_std_dict=obsnorm_std_dict)
 
-    log.debug(f'{elites_mean=}, {elites_std=}')
+    # log.debug(f'{weight_mean_dict=}, {weight_std_dict=}')
     dataset_kwargs = {
         'inp_coefs': inp_coefs,
         'center_data': args.center_data,
-        'elites_mean': elites_mean,
-        'elites_std': elites_std,
+        'weight_denormalizer': weight_denormalizer,
+        'weight_normalizer': weight_normalizer,
+        'obsnorm_denormalizer': obsnorm_denormalizer,
+        'obsnorm_normalizer': obsnorm_normalizer,
     }
 
     rollouts_per_agent = 10  # to align ourselves with baselines
@@ -385,66 +424,96 @@ def train_autoencoder():
     for epoch in range(epochs + 1):
 
         if args.track_agent_quality and epoch % 10 == 0:
-            # get a ground truth policy and evaluate it. Then get the reconstructed policy and compare its
-            # performance and behavior to the ground truth
-            gt_params, gt_measure, obsnorms = next(iter(test_dataloader))
-            gt_measure = gt_measure.to(device).to(torch.float32)
+            with torch.no_grad():
+                # get a ground truth policy and evaluate it. Then get the reconstructed policy and compare its
+                # performance and behavior to the ground truth
+                gt_params, gt_measure, obsnorms = next(iter(test_dataloader))
+                gt_measure = gt_measure.to(device).to(torch.float32)
 
-            if args.conditional:
-                rec_policies, _ = model(gt_params, gt_measure)
-            else:
-                rec_policies, _ = model(gt_params)
+                if args.conditional:
+                    rec_policies, _ = model(gt_params, obsnorms, gt_measure)
+                else:
+                    (rec_policies, rec_obsnorm), _ = model(gt_params, obsnorms)
 
-            info = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, device=device, normalize_obs=not args.merge_obsnorm, **dataset_kwargs)
-            
-            # now try to sample a policy with just measures
-            if args.conditional:
-                rec_policies, _ = model(None, gt_measure)
-
-                info2 = evaluate_agent_quality(env_cfg, env, gt_params, rec_policies, obsnorms, test_batch_size, device=device, normalize_obs=not args.merge_obsnorm, **dataset_kwargs)
-
-                for key, val in info2.items():
-                    info['Conditional_' + key] = val
-
-            if epoch % 50 == 0 and args.reevaluate_archive_vae:
-                # evaluate the model on the entire archive
-                print('Evaluating model on entire archive...')
-                subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = args.image_path, suffix = str(epoch), ignore_first=True, clip_obs_rew=args.clip_obs_rew)
-                for key, val in subsample_results['Reconstructed'].items():
-                    info['Archive/' + key] = val
+                info = evaluate_agent_quality(env_cfg, 
+                                            env, gt_params, 
+                                            rec_policies, 
+                                            obsnorms, 
+                                            rec_obsnorm, 
+                                            test_batch_size, 
+                                            device=device, 
+                                            normalize_obs=not args.merge_obsnorm, 
+                                            **dataset_kwargs)
                 
-            # log items to tensorboard and wandb
-            if args.use_wandb:
-                for key, val in info.items():
-                    writer.add_scalar(key, val, global_step + 1)
+                # now try to sample a policy with just measures
+                if args.conditional:
+                    rec_policies, _ = model(None, gt_measure)
 
-                info.update({
-                    'global_step': global_step + 1,
-                    'epoch': epoch + 1
-                })
+                    info2 = evaluate_agent_quality(env_cfg, 
+                                                env, 
+                                                gt_params, 
+                                                rec_policies, 
+                                                obsnorms, 
+                                                rec_obsnorm,
+                                                test_batch_size, 
+                                                device=device, 
+                                                normalize_obs=not args.merge_obsnorm, 
+                                                **dataset_kwargs)
 
-                wandb.log(info)
-                if args.reevaluate_archive_vae:
-                    wandb.log({'Archive/recon_image': wandb.Image(image_results['Reconstructed'], caption=f"Epoch {epoch + 1}")})
+                    for key, val in info2.items():
+                        info['Conditional_' + key] = val
+
+                if epoch % 50 == 0 and args.reevaluate_archive_vae:
+                    # evaluate the model on the entire archive
+                    print('Evaluating model on entire archive...')
+                    subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name, 
+                                                                            archive_df=train_archive[0], 
+                                                                            model=model, 
+                                                                            N=-1, 
+                                                                            image_path = args.image_path, 
+                                                                            suffix = str(epoch), 
+                                                                            ignore_first=True,
+                                                                            normalize_obs=not args.merge_obsnorm, 
+                                                                            **dataset_kwargs, clip_obs_rew=args.clip_obs_rew)
+                    for key, val in subsample_results['Reconstructed'].items():
+                        info['Archive/' + key] = val
+                    
+                # log items to tensorboard and wandb
+                if args.use_wandb:
+                    for key, val in info.items():
+                        writer.add_scalar(key, val, global_step + 1)
+
+                    info.update({
+                        'global_step': global_step + 1,
+                        'epoch': epoch + 1
+                    })
+
+                    wandb.log(info)
+                    if args.reevaluate_archive_vae:
+                        wandb.log({'Archive/recon_image': wandb.Image(image_results['Reconstructed'], caption=f"Epoch {epoch + 1}")})
 
         epoch_mse_loss = 0
         epoch_kl_loss = 0
+        epoch_norm_mse_loss = 0
         epoch_perceptual_loss = 0
         loss_infos = []
-        for step, (policies, measures, _) in enumerate(dataloader):
+        for step, (policies, measures, obsnorms) in enumerate(dataloader):
             optimizer.zero_grad()
 
             # policies = policies.to(device)
             measures = measures.to(device).to(torch.float32)
 
             if args.conditional:
-                rec_policies, posterior = model(policies, measures)
+                (rec_policies, rec_obsnorm), posterior = model(policies, obsnorms, measures)
             else:
-                rec_policies, posterior = model(policies)
+                (rec_policies, rec_obsnorm), posterior = model(policies, obsnorms)
 
             policy_mse_loss, loss_info = mse_loss_func(policies, rec_policies)
+            norm_mse_loss, norm_loss_info = norm_mse_loss_func(obsnorms, rec_obsnorm)
+
             kl_loss = posterior.kl().mean()
-            loss = policy_mse_loss + args.kl_coef * kl_loss
+
+            loss = policy_mse_loss + args.kl_coef * kl_loss + norm_mse_loss
 
             if args.use_perceptual_loss:
                 rec_weights_dict = agent_to_weights_dict(rec_policies)
@@ -465,21 +534,24 @@ def train_autoencoder():
             loss_info['scaled_actor_mean.0.bias'] = (1/((inp_coefs[1])**2))*loss_info['actor_mean.0.bias']
             epoch_mse_loss += policy_mse_loss.item()
             epoch_kl_loss += kl_loss.item()
+            epoch_norm_mse_loss += norm_mse_loss.item()
             loss_infos.append(loss_info)
 
 
     
-        print(f'Epoch {epoch} MSE Loss: {epoch_mse_loss / len(dataloader)}')
+        print(f'Epoch {epoch} MSE Loss: {epoch_mse_loss / len(dataloader)}, Norm MSE Loss: {epoch_norm_mse_loss / len(dataloader)}')
         if args.use_wandb:
             avg_loss_infos = {key: sum([loss_info[key] for loss_info in loss_infos]) / len(loss_infos) for key in loss_infos[0].keys()}
 
             writer.add_scalar("Loss/mse_loss", epoch_mse_loss / len(dataloader), global_step+1)
             writer.add_scalar("Loss/kl_loss", epoch_kl_loss / len(dataloader), global_step+1)
             writer.add_scalar("Loss/perceptual_loss", epoch_perceptual_loss / len(dataloader), global_step+1)
+            writer.add_scalar("Loss/norm_mse_loss", epoch_norm_mse_loss / len(dataloader), global_step+1)
             wandb.log({
                 'Loss/mse_loss': epoch_mse_loss / len(dataloader),
                 'Loss/kl_loss': epoch_kl_loss / len(dataloader),
                 'Loss/perceptual_loss': epoch_perceptual_loss / len(dataloader),
+                'Loss/norm_mse_loss': epoch_norm_mse_loss / len(dataloader),
                 'epoch': epoch + 1,
                 'global_step': global_step + 1
             })

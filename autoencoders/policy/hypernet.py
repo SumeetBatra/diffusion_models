@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from autoencoders.policy.resnet3d import Encoder as Resnet3DEncoder
-from autoencoders.autoencoder_base import AutoEncoderBase
+from autoencoders.autoencoder_base import AutoEncoderBase, GaussianDistribution
 from models.hyper.ghn_modules import *
 from RL.actor_critic import Actor
 
@@ -30,10 +30,10 @@ class HypernetAutoEncoder(AutoEncoderBase):
                  z_channels: int,
                  obs_shape: int,
                  action_shape: np.ndarray,
-                 normalize_obs: bool = False,
                  z_height: int = 4,
                  conditional: bool = False,
                  ghn_hid: int = 64,
+                 obsnorm_hid: int = 64,
                  ):
         """
         :param emb_channels: is the number of dimensions in the quantized embedding space
@@ -48,6 +48,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
                                     z_height=z_height,
                                     conditional=conditional,
                                     )
+        
 
         # config dict for the hypernet decoder
         action_dim, obs_dim = action_shape[0], obs_shape
@@ -66,15 +67,28 @@ class HypernetAutoEncoder(AutoEncoderBase):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.decoder = MLP_GHN(**config, debug_level=0, device=device)
 
+        self.obsnorm_decoder = ObsNormDecoder(obs_shape=obs_shape,
+                                        z_channels=z_channels,
+                                        z_height=z_height,
+                                        conditional=conditional,
+                                        hid = obsnorm_hid,
+                                        )
+        
         print(f"Total size of z is: {self.decoder.z_vec_size}")
 
         def make_actor():
             return Actor(obs_shape=obs_shape,
                          action_shape=action_shape,
                          deterministic=True,
-                         normalize_obs=normalize_obs)
+                         normalize_obs=False)
 
         self.dummy_actor = make_actor
+
+    def encode(self, x: torch.Tensor, x2:torch.Tensor, y: torch.Tensor = None):
+        assert self.encoder is not None, "Need to define a valid encoder (nn.Module)"
+        z = self.encoder(x,x2,y)
+        moments = self.quant_conv(z)
+        return GaussianDistribution(moments)
 
     def decode(self, z: torch.Tensor, y: torch.Tensor = None):
         """
@@ -83,18 +97,100 @@ class HypernetAutoEncoder(AutoEncoderBase):
         """
         # Map to embedding space from the quantized representation
         z = self.post_quant_conv(z)
+        recon_obsnorm = self.obsnorm_decoder(z)
         # Decode the image of shape `[batch_size, channels, height, width]`
-        return self.decoder([self.dummy_actor() for _ in range(z.shape[0])], z, y)
+        return self.decoder([self.dummy_actor() for _ in range(z.shape[0])], z, y), recon_obsnorm
+
+    def forward(self, x: torch.Tensor, x2:torch.Tensor, y: torch.Tensor = None):
+        if x is None:
+            # Not coded for obsnorm yet
+            posterior = self.random_sample(x, y)
+        else:
+            posterior = self.encode(x, x2, y)
+        z = posterior.sample()
+        out = self.decode(z, y)
+        return out, posterior
+
+
+class ObsNormEncoder(nn.Module):
+    def __init__(self,
+                 obs_shape: int,
+                 z_channels: int,
+                 z_height: int = 4,
+                 conditional: bool = False,
+                 hid = 64,
+                 ):
+        super().__init__()
+        self.z_channels = z_channels
+        self.z_height = z_height
+        self.conditional = conditional
+
+        self.mean_enc = nn.Sequential(
+            nn.Linear(obs_shape, hid),
+            nn.ReLU(),
+            nn.Linear(hid, hid),
+            nn.ReLU(),
+            nn.Linear(hid, hid)
+        )
+        self.std_enc = nn.Sequential(
+            nn.Linear(obs_shape, hid),
+            nn.ReLU(),
+            nn.Linear(hid, hid),
+            nn.ReLU(),
+            nn.Linear(hid, hid)
+        )
+        self.z_enc = nn.Linear(2*hid, 2 * z_channels * z_height * z_height)
+        
+    def forward(self, x: torch.Tensor, y: torch.Tensor = None):
+        mean = self.mean_enc(x['obs_rms.mean'])
+        std = self.std_enc(x['obs_rms.logstd'])
+        z = self.z_enc(torch.cat([mean, std], dim=-1))
+        z = z.view(z.shape[0], 2 * self.z_channels, self.z_height, self.z_height)
+        return z
+
+
+class ObsNormDecoder(nn.Module):
+    def __init__(self,
+                 obs_shape: int,
+                 z_channels: int,
+                 z_height: int = 4,
+                 conditional: bool = False,
+                 hid = 64,
+                 ):
+        super().__init__()
+        self.z_channels = z_channels
+        self.z_height = z_height
+        self.conditional = conditional
+
+        self.mean_dec = nn.Sequential(
+            nn.Linear(z_channels * z_height * z_height, hid),
+            nn.ReLU(),
+            nn.Linear(hid, hid),
+            nn.ReLU(),
+            nn.Linear(hid, obs_shape)
+        )
+        self.std_dec = nn.Sequential(
+            nn.Linear(z_channels * z_height * z_height, hid),
+            nn.ReLU(),
+            nn.Linear(hid, hid),
+            nn.ReLU(),
+            nn.Linear(hid, obs_shape)
+        )
+        
+    def forward(self, z: torch.Tensor, y: torch.Tensor = None):
+        z = z.view(z.shape[0], self.z_channels * self.z_height * self.z_height)
+        mean = self.mean_dec(z)
+        std = self.std_dec(z)
+        return {'obs_rms.mean':mean, 'obs_rms.logstd':std}
 
 
 class ModelEncoder(nn.Module):
-    def __init__(self, obs_shape, action_shape, emb_channels, z_channels, obs_norm=False, z_height=4,
+    def __init__(self, obs_shape, action_shape, emb_channels, z_channels, z_height=4,
                  regress_to_measure=False, measure_dim=2, conditional=False):
         super().__init__()
 
-        self.obs_norm = obs_norm
         self.conditional = conditional
-        dummy_actor = Actor(obs_shape=obs_shape, action_shape=action_shape, normalize_obs=self.obs_norm,
+        dummy_actor = Actor(obs_shape=obs_shape, action_shape=action_shape, normalize_obs=False,
                             normalize_returns=True)
 
         self.channels = [1, 32, 64, 64, 128, 256, 256, 512, 512, 512]
@@ -135,15 +231,15 @@ class ModelEncoder(nn.Module):
 
             total_op_shape += np.prod(op_shape)
 
-        if self.obs_norm:
-            shape = (1, 1,) + tuple(dummy_actor.obs_normalizer.obs_rms.mean.shape) + (1,)
-            self.cnns['rms_mean'], op_shape = self._create_fc_backbone(shape)
-            total_op_shape += np.prod(op_shape)
-            shape = (1, 1,) + tuple(dummy_actor.obs_normalizer.obs_rms.var.shape) + (1,)
-            self.cnns['rms_var'], op_shape = self._create_fc_backbone(shape)
-            total_op_shape += np.prod(op_shape)
 
         self.cnns = nn.ModuleDict(self.cnns)
+        self.obsnorm_encoder = ObsNormEncoder(obs_shape=obs_shape,
+                                z_channels=z_channels,
+                                z_height=z_height,
+                                conditional=conditional,
+                                hid = 64,
+                                )
+        total_op_shape += 2 * z_channels * z_height * z_height
 
         if self.conditional:
             total_op_shape += 2
@@ -151,6 +247,8 @@ class ModelEncoder(nn.Module):
         self.out = nn.Linear(total_op_shape, 2 * self.z_channels * self.z_height * self.z_height)
         if self.regress_to_measure:
             self.measure_out = nn.Linear(2 * self.z_channels * self.z_height * self.z_height, self.measure_dim)
+
+
 
     # create a cnn backbone to extract features from tensor of shape (batch_size, *shape)
     def _create_cnn_backbone(self, shape, leaky_relu=False):
@@ -212,7 +310,7 @@ class ModelEncoder(nn.Module):
         fc.add_module('relu3', nn.ReLU(inplace=True))
         return fc, (1, 1, 256, 1)
 
-    def forward(self, x, y = None, get_intermediate_features=False):
+    def forward(self, x, x2, y = None, get_intermediate_features=False):
         outs = []
         features = []
         for k in range(len(self.list_of_weight_names)):
@@ -237,14 +335,9 @@ class ModelEncoder(nn.Module):
                 out = out.view(out.size(0), -1)
                 outs.append(out)
 
-        if self.obs_norm:
-            out = self.cnns['rms_mean'](x['rms_mean'].unsqueeze(1))
-            out = out.view(out.size(0), -1)
-            outs.append(out)
-            out = self.cnns['rms_var'](x['rms_var'].unsqueeze(1))
-            out = out.view(out.size(0), -1)
-            outs.append(out)
 
+        obs_norm_enc = self.obsnorm_encoder(x2)
+        outs.append(obs_norm_enc.flatten(1))
         x = torch.cat(outs, dim=1)
         if self.conditional:
             x = torch.cat([x, y], dim=1)
