@@ -400,7 +400,7 @@ def train_autoencoder():
             if epoch % 50 == 0 and args.reevaluate_archive_vae:
                 # evaluate the model on the entire archive
                 print('Evaluating model on entire archive...')
-                subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = args.image_path, suffix = str(epoch), ignore_first=True)
+                subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = args.image_path, suffix = str(epoch), ignore_first=True, clip_obs_rew=args.clip_obs_rew)
                 for key, val in subsample_results['Reconstructed'].items():
                     info['Archive/' + key] = val
                 

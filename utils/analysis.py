@@ -24,7 +24,7 @@ from envs.brax_custom.brax_env import make_vec_env_brax
 
 
 def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 100, image_path: str = None,
-                           suffix: str = None, ignore_first: bool = False):
+                           suffix: str = None, ignore_first: bool = False, clip_obs_rew: bool = False):
     '''Randomly sample N elites from the archive. Evaluate the original elites and the reconstructed elites
     from the VAE. Compare the performance using a subsampled QD-Score. Compare the behavior accuracy using the l2 norm
     :param env_name: Name of the environment ex walker2d
@@ -51,6 +51,7 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
 
     env_cfg = AttrDict(shared_params[env_name]['env_cfg'])
     env_cfg.seed = 1111
+    env_cfg.clip_obs_rew = clip_obs_rew
 
     if N != -1:
         archive_df = archive_df.sample(N)

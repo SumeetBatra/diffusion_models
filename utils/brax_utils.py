@@ -22,7 +22,7 @@ shared_params = OrderedDict({
                 'env_name': 'walker2d',
                 'num_dims': 2,
                 'episode_length': 1000,
-                'grid_size': 50
+                'grid_size': 100
             }
         },
     'halfcheetah':
@@ -54,7 +54,7 @@ shared_params = OrderedDict({
                 'env_name': 'humanoid',
                 'num_dims': 2,
                 'episode_length': 1000,
-                'grid_size': 50
+                'grid_size': 100
             }
         },
     'ant':
