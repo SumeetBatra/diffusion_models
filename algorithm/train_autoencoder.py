@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from typing import Optional
 from distutils.util import strtobool
 from torch.optim import Adam
-from dataset.shaped_elites_dataset import ShapedEliteDataset
+from dataset.shaped_elites_dataset import ShapedEliteDataset, WeightNormalizer
 from torch.utils.data import DataLoader
 from autoencoders.policy.hypernet import HypernetAutoEncoder, ModelEncoder
 from RL.actor_critic import Actor
@@ -20,6 +20,7 @@ from utils.utilities import log, config_wandb
 from utils.archive_utils import archive_df_to_archive
 from losses.contperceptual import LPIPS
 from utils.analysis import evaluate_vae_subsample
+from utils.tensor_dict import TensorDict, cat_tensordicts
 
 
 import scipy.stats as stats
@@ -77,18 +78,14 @@ def grad_norm(model):
 
 def evaluate_agent_quality(env_cfg: dict,
                            vec_env,
-                           gt_params_batch: dict[str, torch.Tensor],
+                           gt_params_batch: TensorDict,
                            rec_policies: list[Actor],
-                           obs_norms: dict[str, torch.Tensor],
                            rec_obs_norms: dict[str, torch.Tensor],
                            test_batch_size: int,
                            device: str,
                            normalize_obs: bool = False,
                            center_data: bool = False,
-                           weight_denormalizer = None,
-                           weight_normalizer = None,
-                           obsnorm_denormalizer = None,
-                           obsnorm_normalizer = None,):
+                           weight_normalizer: Optional[WeightNormalizer] = None):
 
     obs_dim = vec_env.single_observation_space.shape[0]
     action_shape = vec_env.single_action_space.shape
@@ -99,31 +96,24 @@ def evaluate_agent_quality(env_cfg: dict,
         gt_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device)
         rec_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device)
 
-        actor_weights = {key: gt_params_batch[key][k] for key in gt_params_batch.keys() if 'actor' in key}
-        recon_actor_weights = rec_policies[k].state_dict()
-
-        if center_data:
-            weight_denormalizer(actor_weights)
-            weight_denormalizer(recon_actor_weights)
-            
+        actor_weights = TensorDict({key: gt_params_batch[key][k] for key in gt_params_batch.keys() if 'actor' in key})
+        recon_actor_weights = TensorDict(rec_policies[k].state_dict())
 
         if normalize_obs:
-            obs_norms_cpy = {'obs_rms.mean' : obs_norms['obs_rms.mean'][k],
-                'obs_rms.var' : obs_norms['obs_rms.var'][k],
-                'obs_rms.count' : obs_norms['obs_rms.count'][k],}
+            obs_norms_cpy = TensorDict({'obs_normalizer.obs_rms.mean': gt_params_batch['obs_normalizer.obs_rms.mean'][k],
+                                        'obs_normalizer.obs_rms.var': gt_params_batch['obs_normalizer.obs_rms.var'][k],
+                                        'obs_normalizer.obs_rms.count': gt_params_batch['obs_normalizer.obs_rms.count'][k]})
 
-            rec_obs_norms_cpy = {'obs_rms.mean' : rec_obs_norms['obs_rms.mean'][k],
-                            'obs_rms.var' : torch.exp(rec_obs_norms['obs_rms.logstd'][k] * 2),
-                            'obs_rms.count' : obs_norms['obs_rms.count'][k],}
-            
-            if center_data:
-                obsnorm_denormalizer(obs_norms_cpy)
-                obsnorm_denormalizer(rec_obs_norms_cpy)
+            rec_obs_norms_cpy = TensorDict({'obs_normalizer.obs_rms.mean': rec_obs_norms['obs_normalizer.obs_rms.mean'][k],
+                                            'obs_normalizer.obs_rms.var': torch.exp(rec_obs_norms['obs_normalizer.obs_rms.logstd'][k] * 2),
+                                            'obs_normalizer.obs_rms.count': gt_params_batch['obs_normalizer.obs_rms.count'][k], })
+            actor_weights.update(obs_norms_cpy)
+            recon_actor_weights.update(rec_obs_norms_cpy)
 
-            gt_norm_dict = {'obs_normalizer.' + key: obs_norms_cpy[key] for key in obs_norms_cpy.keys()}
-            rec_norm_dict = {'obs_normalizer.' + key: rec_obs_norms_cpy[key] for key in rec_obs_norms_cpy.keys()}
-            actor_weights.update(gt_norm_dict)
-            recon_actor_weights.update(rec_norm_dict)
+        if center_data:
+            assert weight_normalizer is not None and isinstance(weight_normalizer, WeightNormalizer)
+            weight_normalizer.denormalize(actor_weights)
+            weight_normalizer.denormalize(recon_actor_weights)
 
         recon_actor_weights['actor_logstd'] = actor_weights['actor_logstd']
 
@@ -134,10 +124,10 @@ def evaluate_agent_quality(env_cfg: dict,
         rec_agents.append(rec_agent)
 
     # batch-evaluate the ground-truth agents
-    gt_rewards, gt_measures = rollout_many_agents(gt_agents, env_cfg, vec_env, device, normalize_obs = normalize_obs)
+    gt_rewards, gt_measures = rollout_many_agents(gt_agents, env_cfg, vec_env, device, normalize_obs=normalize_obs, verbose=True)
 
     # batch-evaluate the reconstructed agents
-    rec_rewards, rec_measures = rollout_many_agents(rec_agents, env_cfg, vec_env, device, normalize_obs = normalize_obs)
+    rec_rewards, rec_measures = rollout_many_agents(rec_agents, env_cfg, vec_env, device, normalize_obs=normalize_obs, verbose=True)
 
     # calculate statistics based on results
     info = calculate_statistics(gt_rewards, gt_measures, rec_rewards, rec_measures)
@@ -176,10 +166,7 @@ def shaped_elites_dataset_factory(env_name,
                                   batch_size=32,
                                   is_eval=False,
                                   center_data: bool = False,
-                                  weight_mean_dict: Optional[dict] = None,
-                                  weight_std_dict: Optional[dict] = None,
-                                  obsnorm_mean_dict: Optional[dict] = None,
-                                  obsnorm_std_dict: Optional[dict] = None,):
+                                  weight_normalizer: Optional[WeightNormalizer] = None):
     archive_data_path = f'data/{env_name}'
     archive_dfs = []
 
@@ -225,38 +212,28 @@ def shaped_elites_dataset_factory(env_name,
                                          is_eval=is_eval,
                                          eval_batch_size=batch_size if is_eval else None,
                                          center_data=center_data,
-                                         weight_mean_dict=weight_mean_dict,
-                                         weight_std_dict=weight_std_dict,
-                                         obsnorm_mean_dict=obsnorm_mean_dict,
-                                         obsnorm_std_dict=obsnorm_std_dict)
+                                         weight_normalizer=weight_normalizer)
 
-    weights_mean, weights_std = s_elite_dataset.weight_mean_dict, s_elite_dataset.weight_std_dict
-    denormalizer_weight = s_elite_dataset.denormalize_weights
-    normalizer_weight = s_elite_dataset.normalize_weights
-    obsnorm_mean, obsnorm_std = s_elite_dataset.obs_norm_mean_dict, s_elite_dataset.obs_norm_std_dict
-    denormalizer_obsnorm = s_elite_dataset.denormalize_obsnorm
-    normalizer_obsnorm = s_elite_dataset.normalize_obsnorm
-    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs, weights_mean, \
-        weights_std, denormalizer_weight, normalizer_weight, obsnorm_mean, obsnorm_std, denormalizer_obsnorm, normalizer_obsnorm
+    weight_normalizer = s_elite_dataset.normalizer
+    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs, weight_normalizer
 
 
-def mse_loss_from_weights_dict(target_weights_dict: dict, rec_agents: list[Actor]):
-    # convert the rec_agents (Actors) into a dict of weights
-    pred_weights_dict = {}
-    for agent in rec_agents:
-        for name, param in agent.named_parameters():
-            if name not in pred_weights_dict:
-                pred_weights_dict[name] = []
-            pred_weights_dict[name].append(param)
-
-    # calculate the loss
+def mse_loss_from_weights_dict(target_weights_dict: TensorDict, pred_weights_dict: TensorDict):
     loss = 0
     loss_info = {}
     for key in pred_weights_dict.keys():
-        key_loss = F.mse_loss(torch.stack(pred_weights_dict[key]), target_weights_dict[key])
+        key_loss = F.mse_loss(target_weights_dict[key], pred_weights_dict[key])
         loss += key_loss
         loss_info[key] = key_loss.item()
+
+    with torch.no_grad():
+        obsnorm_loss = torch.Tensor([loss_info[key] for key in loss_info.keys() if 'obs_normalizer' in key]).sum()
+        loss_info.update({
+            'mse_loss': (loss - obsnorm_loss).item(),
+            'obsnorm_loss': obsnorm_loss.item()
+        })
     return loss, loss_info
+
 
 def mse_from_norm_dict(target_weights_dict: dict, rec_weight_dict: dict):
     loss = 0
@@ -266,7 +243,6 @@ def mse_from_norm_dict(target_weights_dict: dict, rec_weight_dict: dict):
         loss += key_loss
         loss_info[key] = key_loss.item()
     return loss, loss_info
-
 
 
 def agent_to_weights_dict(agents: list[Actor]):
@@ -326,13 +302,12 @@ def train_autoencoder():
 
     if args.use_wandb:
         writer = SummaryWriter(f"runs/{exp_name}")
-        config_wandb(wandb_project=args.wandb_project, \
-                     wandb_group=args.wandb_group, \
-                        run_name=args.wandb_run_name, \
-                            entity=args.wandb_entity, \
-                                tags=args.wandb_tag, \
-                                    cfg = vars(args) \
-                                        )
+        config_wandb(wandb_project=args.wandb_project,
+                     wandb_group=args.wandb_group,
+                     run_name=args.wandb_run_name,
+                     entity=args.wandb_entity,
+                     tags=args.wandb_tag,
+                     cfg=vars(args))
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = HypernetAutoEncoder(emb_channels=args.emb_channels,
@@ -353,11 +328,11 @@ def train_autoencoder():
 
     if args.use_perceptual_loss:
         encoder_pretrained = ModelEncoder(obs_shape=obs_shape,
-                                            action_shape=action_shape,
-                                            emb_channels=args.emb_channels,
-                                            z_channels=args.z_channels,
-                                            z_height=args.z_height,
-                                            regress_to_measure=True)
+                                          action_shape=action_shape,
+                                          emb_channels=args.emb_channels,
+                                          z_channels=args.z_channels,
+                                          z_height=args.z_height,
+                                          regress_to_measure=True)
         log.debug(f'Perceptual loss enabled. Using the classifier stored at {args.regressor_path}')
         encoder_pretrained.load_state_dict(torch.load(args.regressor_path))
         encoder_pretrained.to(device)
@@ -370,24 +345,22 @@ def train_autoencoder():
     optimizer = Adam(model.parameters(), lr=1e-4)
 
     mse_loss_func = mse_loss_from_weights_dict
-    norm_mse_loss_func = mse_from_norm_dict
 
     train_batch_size, test_batch_size = 32, 50
-    dataloader, train_archive, weight_mean_dict, weight_std_dict, weight_denormalizer, weight_normalizer, obsnorm_mean_dict, obsnorm_std_dict, obsnorm_denormalizer, obsnorm_normalizer = shaped_elites_dataset_factory( \
-                                                args.env_name, batch_size=train_batch_size, \
-                                                is_eval=False, center_data=args.center_data)
-    test_dataloader, test_archive, _, _, _, _, _, _, _, _ = shaped_elites_dataset_factory(args.env_name, batch_size=test_batch_size, \
-                                                is_eval=True,  center_data=args.center_data, \
-                                                    weight_mean_dict=weight_mean_dict, weight_std_dict=weight_std_dict, \
-                                                        obsnorm_mean_dict=obsnorm_mean_dict, obsnorm_std_dict=obsnorm_std_dict)
+    dataloader, train_archive, weight_normalizer = shaped_elites_dataset_factory(args.env_name,
+                                                                                 batch_size=train_batch_size,
+                                                                                 is_eval=False,
+                                                                                 center_data=args.center_data)
+    test_dataloader, test_archive, *_ = shaped_elites_dataset_factory(args.env_name,
+                                                                      batch_size=test_batch_size,
+                                                                      is_eval=True,
+                                                                      center_data=args.center_data,
+                                                                      weight_normalizer=weight_normalizer)
 
     # log.debug(f'{weight_mean_dict=}, {weight_std_dict=}')
     dataset_kwargs = {
         'center_data': args.center_data,
-        'weight_denormalizer': weight_denormalizer,
-        'weight_normalizer': weight_normalizer,
-        'obsnorm_denormalizer': obsnorm_denormalizer,
-        'obsnorm_normalizer': obsnorm_normalizer,
+        'weight_normalizer': weight_normalizer
     }
 
     rollouts_per_agent = 10  # to align ourselves with baselines
@@ -410,38 +383,37 @@ def train_autoencoder():
             with torch.no_grad():
                 # get a ground truth policy and evaluate it. Then get the reconstructed policy and compare its
                 # performance and behavior to the ground truth
-                gt_params, gt_measure, obsnorms = next(iter(test_dataloader))
+                gt_params, gt_measure = next(iter(test_dataloader))
                 gt_measure = gt_measure.to(device).to(torch.float32)
 
                 if args.conditional:
-                    rec_policies, _ = model(gt_params, obsnorms, gt_measure)
+                    rec_policies, _ = model(gt_params, gt_measure)
                 else:
-                    (rec_policies, rec_obsnorm), _ = model(gt_params, obsnorms)
+                    (rec_policies, rec_obsnorms), _ = model(gt_params)
 
                 info = evaluate_agent_quality(env_cfg, 
-                                            env, gt_params, 
-                                            rec_policies, 
-                                            obsnorms, 
-                                            rec_obsnorm, 
-                                            test_batch_size, 
-                                            device=device, 
-                                            normalize_obs=True, 
-                                            **dataset_kwargs)
+                                              env,
+                                              gt_params,
+                                              rec_policies,
+                                              rec_obsnorms,
+                                              test_batch_size,
+                                              device=device,
+                                              normalize_obs=True,
+                                              **dataset_kwargs)
                 
                 # now try to sample a policy with just measures
                 if args.conditional:
                     rec_policies, _ = model(None, gt_measure)
 
                     info2 = evaluate_agent_quality(env_cfg, 
-                                                env, 
-                                                gt_params, 
-                                                rec_policies, 
-                                                obsnorms, 
-                                                rec_obsnorm,
-                                                test_batch_size, 
-                                                device=device, 
-                                                normalize_obs=True, 
-                                                **dataset_kwargs)
+                                                   env,
+                                                   gt_params,
+                                                   rec_policies,
+                                                   rec_obsnorms,
+                                                   test_batch_size,
+                                                   device=device,
+                                                   normalize_obs=True,
+                                                   **dataset_kwargs)
 
                     for key, val in info2.items():
                         info['Conditional_' + key] = val
@@ -450,14 +422,15 @@ def train_autoencoder():
                     # evaluate the model on the entire archive
                     print('Evaluating model on entire archive...')
                     subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name, 
-                                                                            archive_df=train_archive[0], 
-                                                                            model=model, 
-                                                                            N=-1, 
-                                                                            image_path = args.image_path, 
-                                                                            suffix = str(epoch), 
-                                                                            ignore_first=True,
-                                                                            normalize_obs=True, 
-                                                                            **dataset_kwargs, clip_obs_rew=args.clip_obs_rew)
+                                                                              archive_df=train_archive[0],
+                                                                              model=model,
+                                                                              N=-1,
+                                                                              image_path = args.image_path,
+                                                                              suffix = str(epoch),
+                                                                              ignore_first=True,
+                                                                              normalize_obs=True,
+                                                                              clip_obs_rew=args.clip_obs_rew,
+                                                                              **dataset_kwargs)
                     for key, val in subsample_results['Reconstructed'].items():
                         info['Archive/' + key] = val
                     
@@ -480,23 +453,27 @@ def train_autoencoder():
         epoch_norm_mse_loss = 0
         epoch_perceptual_loss = 0
         loss_infos = []
-        for step, (policies, measures, obsnorms) in enumerate(dataloader):
+        for step, (policies, measures) in enumerate(dataloader):
             optimizer.zero_grad()
 
             # policies = policies.to(device)
             measures = measures.to(device).to(torch.float32)
 
             if args.conditional:
-                (rec_policies, rec_obsnorm), posterior = model(policies, obsnorms, measures)
+                (rec_policies, rec_obsnorms), posterior = model(policies, measures)
             else:
-                (rec_policies, rec_obsnorm), posterior = model(policies, obsnorms)
+                (rec_policies, rec_obsnorms), posterior = model(policies)
 
-            policy_mse_loss, loss_info = mse_loss_func(policies, rec_policies)
-            norm_mse_loss, norm_loss_info = norm_mse_loss_func(obsnorms, rec_obsnorm)
+            rec_obsnorms = TensorDict(rec_obsnorms)
+            rec_state_dicts = [TensorDict(policy.state_dict()) for policy in rec_policies]
+            for i, sd in enumerate(rec_state_dicts):
+                sd.update(rec_obsnorms[i])
+            batch_rec_state_dict = cat_tensordicts(rec_state_dicts)
+            policy_mse_loss, loss_info = mse_loss_func(policies, batch_rec_state_dict)
 
             kl_loss = posterior.kl().mean()
 
-            loss = policy_mse_loss + args.kl_coef * kl_loss + norm_mse_loss
+            loss = policy_mse_loss + args.kl_coef * kl_loss
 
             if args.use_perceptual_loss:
                 rec_weights_dict = agent_to_weights_dict(rec_policies)
@@ -513,14 +490,12 @@ def train_autoencoder():
             optimizer.step()
             global_step += 1
 
-            epoch_mse_loss += policy_mse_loss.item()
+            epoch_mse_loss += loss_info['mse_loss']
             epoch_kl_loss += kl_loss.item()
-            epoch_norm_mse_loss += norm_mse_loss.item()
+            epoch_norm_mse_loss += loss_info['obsnorm_loss']
             loss_infos.append(loss_info)
 
-
-    
-        print(f'Epoch {epoch} MSE Loss: {epoch_mse_loss / len(dataloader)}, Norm MSE Loss: {epoch_norm_mse_loss / len(dataloader)}')
+        print(f'Epoch {epoch} MSE Loss: {epoch_mse_loss / len(dataloader)}, ObsNorm MSE Loss: {epoch_norm_mse_loss / len(dataloader)}')
         if args.use_wandb:
             avg_loss_infos = {key: sum([loss_info[key] for loss_info in loss_infos]) / len(loss_infos) for key in loss_infos[0].keys()}
 
@@ -539,7 +514,6 @@ def train_autoencoder():
             for key in avg_loss_infos.keys():
                 writer.add_scalar(f"Loss/{key}", avg_loss_infos[key], global_step+1)
                 wandb.log({f"Loss/{key}": avg_loss_infos[key], "global_step": global_step+1})
-            
 
     print('Saving final model checkpoint...')
 
@@ -555,6 +529,8 @@ def train_autoencoder():
     if args.use_wandb:
         wandb.log({'Archive/recon_image_final': wandb.Image(image_results['Reconstructed'], caption=f"Final")})
         wandb.log({'Archive/original_image': wandb.Image(image_results['Original'], caption=f"Final")})
+
+
 if __name__ == '__main__':
     train_autoencoder()
 

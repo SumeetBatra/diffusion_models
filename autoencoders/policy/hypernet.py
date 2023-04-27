@@ -40,7 +40,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
         :param z_channels: is the number of channels in the embedding space
         """
         AutoEncoderBase.__init__(self, emb_channels, z_channels, z_height, conditional)
-
+        # TODO: factor in the obs-norm params into the weights dict for the model encoder and decoder
         self.encoder = ModelEncoder(obs_shape=obs_shape,
                                     action_shape=action_shape,
                                     emb_channels=emb_channels,
@@ -84,9 +84,9 @@ class HypernetAutoEncoder(AutoEncoderBase):
 
         self.dummy_actor = make_actor
 
-    def encode(self, x: torch.Tensor, x2:torch.Tensor, y: torch.Tensor = None):
+    def encode(self, x: torch.Tensor, y: torch.Tensor = None):
         assert self.encoder is not None, "Need to define a valid encoder (nn.Module)"
-        z = self.encoder(x,x2,y)
+        z = self.encoder(x, y)
         moments = self.quant_conv(z)
         return GaussianDistribution(moments)
 
@@ -101,12 +101,12 @@ class HypernetAutoEncoder(AutoEncoderBase):
         # Decode the image of shape `[batch_size, channels, height, width]`
         return self.decoder([self.dummy_actor() for _ in range(z.shape[0])], z, y), recon_obsnorm
 
-    def forward(self, x: torch.Tensor, x2:torch.Tensor, y: torch.Tensor = None):
+    def forward(self, x: torch.Tensor, y: torch.Tensor = None):
         if x is None:
             # Not coded for obsnorm yet
             posterior = self.random_sample(x, y)
         else:
-            posterior = self.encode(x, x2, y)
+            posterior = self.encode(x, y)
         z = posterior.sample()
         out = self.decode(z, y)
         return out, posterior
@@ -181,7 +181,7 @@ class ObsNormDecoder(nn.Module):
         z = z.view(z.shape[0], self.z_channels * self.z_height * self.z_height)
         mean = self.mean_dec(z)
         std = self.std_dec(z)
-        return {'obs_rms.mean':mean, 'obs_rms.logstd':std}
+        return {'obs_normalizer.obs_rms.mean': mean, 'obs_normalizer.obs_rms.logstd': std}
 
 
 class ModelEncoder(nn.Module):
@@ -190,8 +190,15 @@ class ModelEncoder(nn.Module):
         super().__init__()
 
         self.conditional = conditional
-        dummy_actor = Actor(obs_shape=obs_shape, action_shape=action_shape, normalize_obs=False,
-                            normalize_returns=True)
+        dummy_actor = Actor(obs_shape=obs_shape,
+                            action_shape=action_shape,
+                            normalize_obs=True,
+                            normalize_returns=False,
+                            deterministic=True)
+        # TODO: maybe register the obs normalizer state dict as params in the policy state dict so that
+        # TODO: we don't need to do this hack
+        actor_state_dict = dummy_actor.state_dict()
+        del actor_state_dict['obs_normalizer.obs_rms.count']
 
         self.channels = [1, 32, 64, 64, 128, 256, 256, 512, 512, 512]
         self.kernel_sizes = [3, 3, 3, 3, 3, 3, 3, 3, 3, 2]
@@ -211,7 +218,7 @@ class ModelEncoder(nn.Module):
         total_op_shape = 0
         self.list_of_weight_names = []
         self.list_of_real_weight_names = []
-        for name, param in dummy_actor.named_parameters():
+        for name, param in actor_state_dict.items():
 
             self.list_of_real_weight_names.append(name)
             key_name = "_".join(name.split('.'))
@@ -221,7 +228,7 @@ class ModelEncoder(nn.Module):
                 shape = (1, 1,) + tuple(param.data.shape)
                 self.cnns[key_name], op_shape = self._create_cnn_backbone(shape)
 
-            elif 'bias' in name:
+            elif 'bias' in name or 'obs_normalizer' in name:
                 shape = (1, 1,) + tuple(param.data.shape) + (1,)
                 self.cnns[key_name], op_shape = self._create_fc_backbone(shape)
 
@@ -231,15 +238,14 @@ class ModelEncoder(nn.Module):
 
             total_op_shape += np.prod(op_shape)
 
-
         self.cnns = nn.ModuleDict(self.cnns)
-        self.obsnorm_encoder = ObsNormEncoder(obs_shape=obs_shape,
-                                z_channels=z_channels,
-                                z_height=z_height,
-                                conditional=conditional,
-                                hid = 64,
-                                )
-        total_op_shape += 2 * z_channels * z_height * z_height
+        # self.obsnorm_encoder = ObsNormEncoder(obs_shape=obs_shape,
+        #                         z_channels=z_channels,
+        #                         z_height=z_height,
+        #                         conditional=conditional,
+        #                         hid = 64,
+        #                         )
+        # total_op_shape += 2 * z_channels * z_height * z_height
 
         if self.conditional:
             total_op_shape += 2
@@ -247,8 +253,6 @@ class ModelEncoder(nn.Module):
         self.out = nn.Linear(total_op_shape, 2 * self.z_channels * self.z_height * self.z_height)
         if self.regress_to_measure:
             self.measure_out = nn.Linear(2 * self.z_channels * self.z_height * self.z_height, self.measure_dim)
-
-
 
     # create a cnn backbone to extract features from tensor of shape (batch_size, *shape)
     def _create_cnn_backbone(self, shape, leaky_relu=False):
@@ -310,7 +314,7 @@ class ModelEncoder(nn.Module):
         fc.add_module('relu3', nn.ReLU(inplace=True))
         return fc, (1, 1, 256, 1)
 
-    def forward(self, x, x2, y = None, get_intermediate_features=False):
+    def forward(self, x, y = None, get_intermediate_features=False):
         outs = []
         features = []
         for k in range(len(self.list_of_weight_names)):
@@ -322,7 +326,7 @@ class ModelEncoder(nn.Module):
                     features.append(out)
                 out = out.view(out.size(0), -1)
                 outs.append(out)
-            elif 'bias' in name:
+            elif 'bias' in name or 'obs_normalizer' in name:
                 out = self.cnns[name](x[real_name].unsqueeze(1))
                 if get_intermediate_features:
                     features.append(out[:, :, :, None])
@@ -336,8 +340,8 @@ class ModelEncoder(nn.Module):
                 outs.append(out)
 
 
-        obs_norm_enc = self.obsnorm_encoder(x2)
-        outs.append(obs_norm_enc.flatten(1))
+        # obs_norm_enc = self.obsnorm_encoder(x2)
+        # outs.append(obs_norm_enc.flatten(1))
         x = torch.cat(outs, dim=1)
         if self.conditional:
             x = torch.cat([x, y], dim=1)
