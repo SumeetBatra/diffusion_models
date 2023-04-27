@@ -196,11 +196,20 @@ def shaped_elites_dataset_factory(env_name,
         soln_dim = archive_df.filter(regex='solution*').to_numpy().shape[1]
         cells = batch_size
         ranges = [(0.0, 1.0)] * shared_params[env_name]['env_cfg']['num_dims']
+
+        # load centroids if they were previously calculated. Maintains consistency across runs
+        centroids = None
+        centroids_path = f'results/{env_name}/centroids.npy'
+        if os.path.exists(centroids_path):
+            log.info(f'Existing centroids found at {centroids_path}. Loading centroids...')
+            centroids = np.load(centroids_path)
         cvt_archive = archive_df_to_archive(archive_df,
                                             type='cvt',
                                             solution_dim=soln_dim,
                                             cells=cells,
-                                            ranges=ranges)
+                                            ranges=ranges,
+                                            custom_centroids=centroids)
+        np.save(centroids_path, cvt_archive.centroids)
         # overload the archive_dfs variable with the new archive_df containing only solutions corresponding to the
         # centroids
         archive_dfs = [cvt_archive.as_pandas(include_solutions=True, include_metadata=True)]
