@@ -156,18 +156,38 @@ def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, de
 
 
 def reconstruct_agents_from_ldm(original_agents, original_measures, vae: nn.Module, device, sampler, scale_factor,
-                                diffusion_model):
+                                diffusion_model,
+                                center_data: bool = False,
+                                weight_normalizer = None):
     batch_size = len(original_measures)
     original_measures = torch.tensor(original_measures).reshape(batch_size, -1).to(device).to(torch.float32)
     samples = sampler.sample(diffusion_model, shape=[batch_size, 4, 4, 4], cond=original_measures)
     samples *= (1 / scale_factor)
-    rec_agents = vae.decode(samples)
+    (rec_agents, rec_obsnorms) = vae.decode(samples)
 
-    if original_agents[0].obs_normalizer is not None:
-        for orig_agent, rec_agent in zip(original_agents, rec_agents):
-            rec_agent.obs_normalizer = orig_agent.obs_normalizer
+    weights_dict = [TensorDict(p.state_dict()) for p in original_agents]
+    weights_dict = cat_tensordicts(weights_dict)
+    if center_data:
+        weights_dict = weight_normalizer.normalize(weights_dict)
 
-    return rec_agents
+    recon_params_batch = [TensorDict(p.state_dict()) for p in rec_agents]
+    recon_params_batch = cat_tensordicts(recon_params_batch)
+    recon_params_batch.update(rec_obsnorms)
+
+    if center_data:
+        weights_dict = weight_normalizer.denormalize(weights_dict)
+        recon_params_batch = weight_normalizer.denormalize(recon_params_batch)
+
+    recon_params_batch['obs_normalizer.obs_rms.var'] = torch.exp(recon_params_batch['obs_normalizer.obs_rms.logstd'] * 2)
+    recon_params_batch['obs_normalizer.obs_rms.count'] = weights_dict['obs_normalizer.obs_rms.count']
+    del recon_params_batch['obs_normalizer.obs_rms.logstd']      
+    # recon_params_batch['actor_logstd'] = weights_dict['actor_logstd']
+
+    for i, agent in enumerate(rec_agents):
+        agent.obs_normalizer = original_agents[i].obs_normalizer
+        agent.load_state_dict(recon_params_batch[i])
+
+    return rec_agents #original_agents
 
 
 def reevaluate_ppga_archive(env_cfg: AttrDict,
@@ -230,7 +250,9 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                                                           weight_normalizer=weight_normalizer,)
             else:
                 agent_batch = reconstruct_agents_from_ldm(agent_batch, measure_batch, vae, device, sampler,
-                                                          scale_factor, diffusion_model)
+                                                          scale_factor, diffusion_model,
+                                                          center_data=center_data,
+                                                          weight_normalizer=weight_normalizer,)
 
         if env_cfg.env_batch_size % len(agent_batch) != 0 and len(original_archive) % solution_batch_size != 0:
             del vec_env

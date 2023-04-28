@@ -122,20 +122,20 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
 
 def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder=None, N: int = 100,
                            image_path: str = None, suffix: str = None, ignore_first: bool = False, sampler=None,
-                           scale_factor=None):
+                           scale_factor=None, clip_obs_rew: bool = False,
+                            normalize_obs: bool = False,
+                            center_data: bool = False,
+                            weight_normalizer = None):
     if type(archive_df) == str:
         with open(archive_df, 'rb') as f:
             archive_df = pickle.load(f)
     else:
         archive_df = archive_df
 
-    env_cfg = AttrDict(shared_params[env_name]['env_cfg'])
-    env_cfg.seed = 1111
 
-    if N != -1:
-        archive_df = archive_df.sample(N)
     env_cfg = AttrDict(shared_params[env_name]['env_cfg'])
     env_cfg.seed = 1111
+    env_cfg.clip_obs_rew = clip_obs_rew
 
     if N != -1:
         archive_df = archive_df.sample(N)
@@ -151,7 +151,7 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
                                              seed=env_cfg.seed,
                                              qd_offset=reward_offset[env_name])
 
-    normalize_obs, normalize_returns = True, True
+    normalize_obs, normalize_returns = True, False
     if not ignore_first:
         print('Re-evaluated Original Archive')
         original_reevaluated_archive = reevaluate_ppga_archive(env_cfg,

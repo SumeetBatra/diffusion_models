@@ -184,7 +184,7 @@ def train(cfg):
                                                                                        batch_size=train_batch_size,
                                                                                        is_eval=False,
                                                                                        center_data=cfg.center_data)
-    test_dataloader, test_archive, *_ = shaped_elites_dataset_factory(cfg.env_name,
+    test_dataloader, *_ = shaped_elites_dataset_factory(cfg.env_name,
                                                                       batch_size=test_batch_size,
                                                                       is_eval=True,
                                                                       center_data=cfg.center_data,
@@ -236,7 +236,19 @@ def train(cfg):
             if epoch % 50 == 0 and cfg.reevaluate_archive_vae:
                 # evaluate the model on the entire archive
                 print('Evaluating model on entire archive...')
-                subsample_results, image_results = evaluate_ldm_subsample(env_name=cfg.env_name, archive_df=train_archive[0], ldm=model, autoencoder=autoencoder, N=-1, image_path = cfg.image_path, suffix = str(epoch), ignore_first=True, sampler=sampler, scale_factor=scale_factor)
+                subsample_results, image_results = evaluate_ldm_subsample(env_name=cfg.env_name, 
+                                                                          archive_df=train_archive[0], 
+                                                                          ldm=model, 
+                                                                          autoencoder=autoencoder, 
+                                                                          N=-1, 
+                                                                          image_path = cfg.image_path, 
+                                                                          suffix = str(epoch), 
+                                                                          ignore_first=True, 
+                                                                          sampler=sampler, 
+                                                                          scale_factor=scale_factor,
+                                                                          normalize_obs=True,
+                                                                          clip_obs_rew=cfg.clip_obs_rew,
+                                                                          **dataset_kwargs)
                 
                 for key, val in subsample_results['Reconstructed'].items():
                     info['Archive/' + key] = val
