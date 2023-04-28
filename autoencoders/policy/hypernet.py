@@ -304,15 +304,15 @@ class ModelEncoder(nn.Module):
                 break
         return cnn, shape
 
-    def _create_fc_backbone(self, shape):
+    def _create_fc_backbone(self, shape, num_hidden=256):
         fc = nn.Sequential()
-        fc.add_module('fc1', nn.Linear(shape[2], 256))
+        fc.add_module('fc1', nn.Linear(shape[2], num_hidden))
         fc.add_module('relu1', nn.ReLU(inplace=True))
-        fc.add_module('fc2', nn.Linear(256, 256))
+        fc.add_module('fc2', nn.Linear(num_hidden, num_hidden))
         fc.add_module('relu2', nn.ReLU(inplace=True))
-        fc.add_module('fc3', nn.Linear(256, 256))
+        fc.add_module('fc3', nn.Linear(num_hidden, num_hidden))
         fc.add_module('relu3', nn.ReLU(inplace=True))
-        return fc, (1, 1, 256, 1)
+        return fc, (1, 1, num_hidden, 1)
 
     def forward(self, x, y = None, get_intermediate_features=False):
         outs = []

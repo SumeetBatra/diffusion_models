@@ -80,7 +80,7 @@ def evaluate_agent_quality(env_cfg: dict,
                            vec_env,
                            gt_params_batch: TensorDict,
                            rec_policies: list[Actor],
-                           rec_obs_norms: dict[str, torch.Tensor],
+                           rec_obs_norms: TensorDict,
                            test_batch_size: int,
                            device: str,
                            normalize_obs: bool = False,
@@ -90,44 +90,64 @@ def evaluate_agent_quality(env_cfg: dict,
     obs_dim = vec_env.single_observation_space.shape[0]
     action_shape = vec_env.single_action_space.shape
 
+    recon_params_batch = [TensorDict(p.state_dict()) for p in rec_policies]
+    recon_params_batch = cat_tensordicts(recon_params_batch)
+    recon_params_batch.update(rec_obs_norms)
+
+    if center_data:
+        assert weight_normalizer is not None and isinstance(weight_normalizer, WeightNormalizer)
+        gt_params_batch = weight_normalizer.denormalize(gt_params_batch)
+        recon_params_batch = weight_normalizer.denormalize(recon_params_batch)
+
+    if normalize_obs:
+        recon_params_batch['obs_normalizer.obs_rms.var'] = torch.exp(recon_params_batch['obs_normalizer.obs_rms.logstd'] * 2)
+        recon_params_batch['obs_normalizer.obs_rms.count'] = gt_params_batch['obs_normalizer.obs_rms.count']
+        del gt_params_batch['obs_normalizer.obs_rms.logstd']
+        del gt_params_batch['obs_normalizer.obs_rms.std']
+        del recon_params_batch['obs_normalizer.obs_rms.logstd']
+
     # load all relevant data for ground truth and reconstructed agents
-    gt_agents, rec_agents = [], []
-    for k in range(test_batch_size):
-        gt_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device)
-        rec_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device)
+    # gt_agents, rec_agents = [], []
+    # for k in range(test_batch_size):
+    #     gt_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device)
+    #     rec_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device)
+    #
+    #     actor_weights = TensorDict({key: gt_params_batch[key][k] for key in gt_params_batch.keys() if 'actor' in key or 'obs_normalizer' in key})
+    #     recon_actor_weights = TensorDict(rec_policies[k].state_dict())
+    #
+    #     if normalize_obs:
+    #         rec_obsnorms_squashed = TensorDict({
+    #             'obs_normalizer.obs_rms.mean': rec_obs_norms['obs_normalizer.obs_rms.mean'][k],
+    #             'obs_normalizer.obs_rms.logstd': rec_obs_norms['obs_normalizer.obs_rms.logstd'][k],
+    #             'obs_normalizer.obs_rms.count': gt_params_batch['obs_normalizer.obs_rms.count'][k]
+    #         })
+    #         recon_actor_weights.update(rec_obsnorms_squashed)
+    #
+    #     if center_data:
+    #         assert weight_normalizer is not None and isinstance(weight_normalizer, WeightNormalizer)
+    #
+    #         actor_weights = weight_normalizer.denormalize(actor_weights)
+    #         recon_actor_weights = weight_normalizer.denormalize(recon_actor_weights)
+    #
+    #     if normalize_obs:
+    #         recon_actor_weights['obs_normalizer.obs_rms.var'] = torch.exp(recon_actor_weights['obs_normalizer.obs_rms.logstd'] * 2)
+    #         del actor_weights['obs_normalizer.obs_rms.logstd']
+    #         del actor_weights['obs_normalizer.obs_rms.std']
+    #         del recon_actor_weights['obs_normalizer.obs_rms.logstd']
 
-        actor_weights = TensorDict({key: gt_params_batch[key][k] for key in gt_params_batch.keys() if 'actor' in key})
-        recon_actor_weights = TensorDict(rec_policies[k].state_dict())
+    recon_params_batch['actor_logstd'] = gt_params_batch['actor_logstd']
 
-        if normalize_obs:
-            obs_norms_cpy = TensorDict({'obs_normalizer.obs_rms.mean': gt_params_batch['obs_normalizer.obs_rms.mean'][k],
-                                        'obs_normalizer.obs_rms.var': gt_params_batch['obs_normalizer.obs_rms.var'][k],
-                                        'obs_normalizer.obs_rms.count': gt_params_batch['obs_normalizer.obs_rms.count'][k]})
-
-            rec_obs_norms_cpy = TensorDict({'obs_normalizer.obs_rms.mean': rec_obs_norms['obs_normalizer.obs_rms.mean'][k],
-                                            'obs_normalizer.obs_rms.var': torch.exp(rec_obs_norms['obs_normalizer.obs_rms.logstd'][k] * 2),
-                                            'obs_normalizer.obs_rms.count': gt_params_batch['obs_normalizer.obs_rms.count'][k], })
-            actor_weights.update(obs_norms_cpy)
-            recon_actor_weights.update(rec_obs_norms_cpy)
-
-        if center_data:
-            assert weight_normalizer is not None and isinstance(weight_normalizer, WeightNormalizer)
-            weight_normalizer.denormalize(actor_weights)
-            weight_normalizer.denormalize(recon_actor_weights)
-
-        recon_actor_weights['actor_logstd'] = actor_weights['actor_logstd']
-
-        gt_agent.load_state_dict(actor_weights)
-        rec_agent.load_state_dict(recon_actor_weights)
-
-        gt_agents.append(gt_agent)
-        rec_agents.append(rec_agent)
+    gt_agents = [Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device) for _ in range(len(gt_params_batch))]
+    rec_agents = [Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device) for i in range(len(recon_params_batch))]
+    for i in range(len(gt_params_batch)):
+        gt_agents[i].load_state_dict(gt_params_batch[i])
+        rec_agents[i].load_state_dict(recon_params_batch[i])
 
     # batch-evaluate the ground-truth agents
-    gt_rewards, gt_measures = rollout_many_agents(gt_agents, env_cfg, vec_env, device, normalize_obs=normalize_obs, verbose=False)
+    gt_rewards, gt_measures = rollout_many_agents(gt_agents, env_cfg, vec_env, device, normalize_obs=normalize_obs, verbose=True)
 
     # batch-evaluate the reconstructed agents
-    rec_rewards, rec_measures = rollout_many_agents(rec_agents, env_cfg, vec_env, device, normalize_obs=normalize_obs, verbose=False)
+    rec_rewards, rec_measures = rollout_many_agents(rec_agents, env_cfg, vec_env, device, normalize_obs=normalize_obs, verbose=True)
 
     # calculate statistics based on results
     info = calculate_statistics(gt_rewards, gt_measures, rec_rewards, rec_measures)
@@ -390,6 +410,7 @@ def train_autoencoder():
                     rec_policies, _ = model(gt_params, gt_measure)
                 else:
                     (rec_policies, rec_obsnorms), _ = model(gt_params)
+                    rec_obsnorms = TensorDict(rec_obsnorms)
 
                 info = evaluate_agent_quality(env_cfg, 
                                               env,
