@@ -124,10 +124,10 @@ def evaluate_agent_quality(env_cfg: dict,
         rec_agents.append(rec_agent)
 
     # batch-evaluate the ground-truth agents
-    gt_rewards, gt_measures = rollout_many_agents(gt_agents, env_cfg, vec_env, device, normalize_obs=normalize_obs, verbose=True)
+    gt_rewards, gt_measures = rollout_many_agents(gt_agents, env_cfg, vec_env, device, normalize_obs=normalize_obs, verbose=False)
 
     # batch-evaluate the reconstructed agents
-    rec_rewards, rec_measures = rollout_many_agents(rec_agents, env_cfg, vec_env, device, normalize_obs=normalize_obs, verbose=True)
+    rec_rewards, rec_measures = rollout_many_agents(rec_agents, env_cfg, vec_env, device, normalize_obs=normalize_obs, verbose=False)
 
     # calculate statistics based on results
     info = calculate_statistics(gt_rewards, gt_measures, rec_rewards, rec_measures)
@@ -465,11 +465,21 @@ def train_autoencoder():
                 (rec_policies, rec_obsnorms), posterior = model(policies)
 
             rec_obsnorms = TensorDict(rec_obsnorms)
-            rec_state_dicts = [TensorDict(policy.state_dict()) for policy in rec_policies]
-            for i, sd in enumerate(rec_state_dicts):
-                sd.update(rec_obsnorms[i])
-            batch_rec_state_dict = cat_tensordicts(rec_state_dicts)
-            policy_mse_loss, loss_info = mse_loss_func(policies, batch_rec_state_dict)
+            # rec_state_dicts = [TensorDict(policy.state_dict()) for policy in rec_policies]
+            rec_state_dicts = {}
+            for agent in rec_policies:
+                for name, param in agent.named_parameters():
+                    if name not in rec_state_dicts:
+                        rec_state_dicts[name] = []
+                    rec_state_dicts[name].append(param)
+            for name, param in rec_state_dicts.items():
+                rec_state_dicts[name] = torch.stack(param, dim=0)
+
+            # for i, sd in enumerate(rec_state_dicts):
+            #     sd.update(rec_obsnorms[i])
+            # batch_rec_state_dict = cat_tensordicts(rec_state_dicts)
+            rec_state_dicts.update(rec_obsnorms)
+            policy_mse_loss, loss_info = mse_loss_func(policies, rec_state_dicts)
 
             kl_loss = posterior.kl().mean()
 

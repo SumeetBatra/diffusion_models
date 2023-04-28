@@ -61,7 +61,6 @@ class ShapedEliteDataset(Dataset):
         self.objective_list = archive_df['objective'].to_numpy()
 
         elites_list = archive_df.filter(regex='solution*').to_numpy()
-        self._size = len(elites_list)
 
         if self.is_eval:
             # indices shall be eval_batch_size number of indices spaced out (by objective) evenly across the elites_list
@@ -72,17 +71,19 @@ class ShapedEliteDataset(Dataset):
             self.metadata = self.metadata[indices]
             self.objective_list = self.objective_list[indices]
 
+        self._size = len(elites_list)
+
         weight_dicts_list = self._params_to_weight_dicts(elites_list)
         self.weights_dict = cat_tensordicts(weight_dicts_list)
 
         # per-layer mean and std-dev stats for centering / de-centering the data
         if weight_normalizer is None:
             weight_mean_dict = TensorDict({
-                key: self.weights_dict[key].flatten().mean(0).to(self.device) for key in self.weights_dict.keys()
+                key: self.weights_dict[key].mean(0).to(self.device) for key in self.weights_dict.keys()
             })
 
             weight_std_dict = TensorDict({
-                key: self.weights_dict[key].flatten().std(0).to(self.device) for key in self.weights_dict.keys()
+                key: self.weights_dict[key].std(0).to(self.device) for key in self.weights_dict.keys()
             })
             weight_normalizer = WeightNormalizer(means_dict=weight_mean_dict, std_dict=weight_std_dict)
 
@@ -102,7 +103,7 @@ class ShapedEliteDataset(Dataset):
     def _params_to_weight_dicts(self, elites_list):
         weight_dicts = []
         for i, params in tqdm(enumerate(elites_list)):
-            agent = Actor(self.obs_dim, self.action_shape, True, True)
+            agent = Actor(self.obs_dim, self.action_shape, True, False)
             normalize_obs = self.metadata[i][0]['obs_normalizer']
             if isinstance(normalize_obs, dict):
                 obs_normalizer = ObsNormalizer(self.obs_dim).to(self.device)
