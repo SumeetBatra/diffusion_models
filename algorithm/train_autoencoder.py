@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from typing import Optional
 from distutils.util import strtobool
 from torch.optim import Adam
-from dataset.shaped_elites_dataset import ShapedEliteDataset, WeightNormalizer
+from dataset.shaped_elites_dataset import ShapedEliteDataset, WeightNormalizer, LangShapedEliteDataset
 from torch.utils.data import DataLoader
 from autoencoders.policy.hypernet import HypernetAutoEncoder, ModelEncoder
 from RL.actor_critic import Actor
@@ -239,6 +239,41 @@ def shaped_elites_dataset_factory(env_name,
     weight_normalizer = s_elite_dataset.normalizer
     return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs, weight_normalizer
 
+def lang_shaped_elites_dataset_factory(env_name, merge_obsnorm = True, batch_size=32, is_eval=False, inp_coef=0.25):
+    archive_data_path = f'data/{env_name}'
+    archive_dfs = []
+
+    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100*.pkl')
+    assert len(archive_df_paths) == 1
+    for path in archive_df_paths:
+        with open(path, 'rb') as f:
+            log.info(f'Loading archive at {path}')
+            archive_df = pickle.load(f)
+            archive_dfs.append(archive_df)
+
+    text_label_paths = sorted(glob.glob(archive_data_path + '/text_labels_*.pkl'))
+    path = text_label_paths[-1]
+    with open(path, 'rb') as f:
+        log.info(f'Loading text labels from {path}')
+        text_labels = pickle.load(f)
+
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    obs_dim, action_shape = shared_params[env_name]['obs_dim'], np.array([shared_params[env_name]['action_dim']])
+
+    s_elite_dataset = LangShapedEliteDataset(archive_dfs,
+                                         obs_dim=obs_dim,
+                                         action_shape=action_shape,
+                                         device=device,
+                                         normalize_obs=merge_obsnorm,
+                                         is_eval=is_eval,
+                                         inp_coef=inp_coef,
+                                         eval_batch_size=batch_size if is_eval else None,
+                                         text_labels=text_labels,
+                                         )
+
+    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs
+
 
 def mse_loss_from_weights_dict(target_weights_dict: TensorDict, pred_weights_dict: TensorDict):
     loss = 0
@@ -421,7 +456,7 @@ def train_autoencoder():
                     (rec_policies, rec_obsnorms), _ = model(gt_params)
                     rec_obsnorms = TensorDict(rec_obsnorms)
 
-                info = evaluate_agent_quality(env_cfg, 
+                info = evaluate_agent_quality(env_cfg,
                                               env,
                                               gt_params,
                                               rec_policies,
@@ -430,12 +465,12 @@ def train_autoencoder():
                                               device=device,
                                               normalize_obs=True,
                                               **dataset_kwargs)
-                
+
                 # now try to sample a policy with just measures
                 if args.conditional:
                     rec_policies, _ = model(None, gt_measure)
 
-                    info2 = evaluate_agent_quality(env_cfg, 
+                    info2 = evaluate_agent_quality(env_cfg,
                                                    env,
                                                    gt_params,
                                                    rec_policies,
@@ -451,7 +486,7 @@ def train_autoencoder():
                 if epoch % 50 == 0 and args.reevaluate_archive_vae:
                     # evaluate the model on the entire archive
                     print('Evaluating model on entire archive...')
-                    subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name, 
+                    subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name,
                                                                               archive_df=train_archive[0],
                                                                               model=model,
                                                                               N=-1,
@@ -463,7 +498,7 @@ def train_autoencoder():
                                                                               **dataset_kwargs)
                     for key, val in subsample_results['Reconstructed'].items():
                         info['Archive/' + key] = val
-                    
+
                 # log items to tensorboard and wandb
                 if args.use_wandb:
                     for key, val in info.items():

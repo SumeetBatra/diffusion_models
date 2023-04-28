@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-from typing import Union, Optional
+from typing import List, Union, Optional
 from pandas import DataFrame
 from torch.utils.data import Dataset, DataLoader
 from RL.actor_critic import Actor
@@ -117,6 +117,17 @@ class ShapedEliteDataset(Dataset):
             weights_dict['obs_normalizer.obs_rms.logstd'] = torch.log(weights_dict['obs_normalizer.obs_rms.std'])
             weight_dicts.append(weights_dict)
         return weight_dicts
+
+
+class LangShapedEliteDataset(ShapedEliteDataset):
+
+    def __init__(self, *args, text_labels: List[str], **kwargs):
+        super().__init__(*args, **kwargs)
+        self.text_labels = text_labels
+
+    def __getitem__(self, item):
+        weights_dict, measures = super().__getitem__(item)
+        return weights_dict, (measures, self.text_labels[item])
 
 
 if __name__ == '__main__':

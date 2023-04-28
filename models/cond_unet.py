@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
+import clip
 
 from models.attention import SpatialTransformer
 from models.unet import SinusoidalPositionEmbeddings
@@ -185,6 +186,44 @@ class ConditionalUNet(nn.Module):
         t_emb = self.time_embed(time_steps)
         if cond is not None:
             cond = self.cond_embed(cond)[:, None, :]
+
+        for module in self.input_blocks:
+            x = module(x, t_emb, cond)
+            x_input_block.append(x)
+
+        x = self.middle_block(x, t_emb, cond)
+
+        for module in self.output_blocks:
+            x = torch.cat([x, x_input_block.pop()], dim=1)
+            x = module(x, t_emb, cond)
+
+        return self.out(x)
+
+class LangConditionalUNet(ConditionalUNet):
+
+    # Clip naming convention is model_type-size/patch_size
+    def __init__(self, *args, clip_model_name: str = "ViT-B/16", **kwargs):
+        super().__init__(*args, **kwargs)
+        model, preprocess_img = clip.load(clip_model_name)
+        del preprocess_img
+        self.clip_model = model
+        # May as well delete the visual transformer, since we're only using the text transformer
+        del self.clip_model.visual
+        # We could patch the clip text projection instead, but why not stack more layers?
+        d_cond: int = self.cond_embed[-1].weight.shape[1]
+        self.clip_cond_projection = nn.Linear(self.clip_model.text_projection.shape[1],
+                                              d_cond, bias=True)
+
+    def text_to_cond(self, text: List[str]) -> torch.Tensor:
+        return self.clip_cond_projection(self.clip_model.encode_text(text))
+
+    def forward(self, x: torch.Tensor, time_steps: torch.Tensor, cond: Optional[torch.Tensor] = None, cond_text: Optional[List[str]] = None):
+        x_input_block = []
+        t_emb = self.time_embed(time_steps)
+        if cond is None:
+            assert cond_text is not None
+            cond = self.clip_cond_projection(self.clip_model.encode_text(cond_text))
+        cond = cond[:, None, :]
 
         for module in self.input_blocks:
             x = module(x, t_emb, cond)

@@ -18,9 +18,9 @@ from utils.utilities import config_wandb, save_cfg
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from models.unet import num_to_groups, Unet
-from models.cond_unet import ConditionalUNet
+from models.cond_unet import ConditionalUNet, LangConditionalUNet
 from autoencoders.policy.hypernet import HypernetAutoEncoder as AutoEncoder
-from algorithm.train_autoencoder import evaluate_agent_quality, shaped_elites_dataset_factory
+from algorithm.train_autoencoder import evaluate_agent_quality, shaped_elites_dataset_factory, lang_shaped_elites_dataset_factory
 from dataset.shaped_elites_dataset import ShapedEliteDataset
 from diffusion.gaussian_diffusion import GaussianDiffusion, cosine_beta_schedule, linear_beta_schedule
 from diffusion.latent_diffusion import LatentDiffusion
@@ -59,7 +59,7 @@ def parse_args():
     # training hyperparams
     parser.add_argument('--autoencoder_cp_path', type=str)
     # parser.add_argument('--model_checkpoint', type=str, default=None, help='Load an existing diffusion model for additional training')
-    
+
     # misc
     parser.add_argument('--reevaluate_archive_vae', type=lambda x: bool(strtobool(x)), default=True, help='Evaluate the VAE on the entire archive every 50 epochs')
     parser.add_argument('--center_data', type=lambda x: bool(strtobool(x)), default=True,
@@ -68,6 +68,8 @@ def parse_args():
                         help='Clip obs and rewards b/w -10 and 10 in brax. Set to true if the PPGA archive trained with clipping enabled')
     parser.add_argument('--grad_clip', type=lambda x: bool(strtobool(x)), default=False,
                         help = 'Clip gradients during backprop')
+
+    parser.add_argument('--use_language', type=lambda x: bool(strtobool(x)), default=False)
 
     args = parser.parse_args()
     cfg = AttrDict(vars(args))
@@ -89,8 +91,8 @@ def estimate_component_wise_variance(batch):
 
 
 def train(cfg):
-    exp_name = cfg.env_name + '_diffusion_model_' + datetime.now().strftime("%Y%m%d-%H%M%S")    
-    
+    exp_name = cfg.env_name + '_diffusion_model_' + datetime.now().strftime("%Y%m%d-%H%M%S")
+
     results_folder = Path("./results")
     results_folder.mkdir(exist_ok=True)
 
@@ -136,17 +138,30 @@ def train(cfg):
     latent_size = cfg.z_height
 
     logvar = torch.full(fill_value=0., size=(timesteps,))
-    model = ConditionalUNet(
-        in_channels=latent_channels,
-        out_channels=latent_channels,
-        channels=64,
-        n_res_blocks=1,
-        attention_levels=[],
-        channel_multipliers=[1, 2, 4],
-        n_heads=4,
-        d_cond=256,
-        logvar=logvar
-    )
+    if cfg.use_language:
+        model = LangConditionalUNet(
+            in_channels=latent_channels,
+            out_channels=latent_channels,
+            channels=64,
+            n_res_blocks=1,
+            attention_levels=[],
+            channel_multipliers=[1, 2, 4],
+            n_heads=4,
+            d_cond=256,
+            logvar=logvar
+        )
+    else:
+        model = ConditionalUNet(
+            in_channels=latent_channels,
+            out_channels=latent_channels,
+            channels=64,
+            n_res_blocks=1,
+            attention_levels=[],
+            channel_multipliers=[1, 2, 4],
+            n_heads=4,
+            d_cond=256,
+            logvar=logvar
+        )
     autoencoder = AutoEncoder(emb_channels=cfg.emb_channels,
                                 z_channels=cfg.z_channels,
                                 obs_shape=obs_dim,
@@ -171,15 +186,21 @@ def train(cfg):
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
     train_batch_size, test_batch_size = 32, 50
-    train_dataloader, train_archive, weight_normalizer = shaped_elites_dataset_factory(cfg.env_name,
-                                                                                       batch_size=train_batch_size,
-                                                                                       is_eval=False,
-                                                                                       center_data=cfg.center_data)
-    test_dataloader, *_ = shaped_elites_dataset_factory(cfg.env_name,
-                                                                      batch_size=test_batch_size,
-                                                                      is_eval=True,
-                                                                      center_data=cfg.center_data,
-                                                                      weight_normalizer=weight_normalizer)
+    if cfg.use_language:
+        factory_fn = lang_shaped_elites_dataset_factory
+    else:
+        factory_fn = shaped_elites_dataset_factory
+    train_dataloader, train_archive, weight_normalizer = factory_fn(cfg.env_name,
+                                                                    batch_size=train_batch_size,
+                                                                    is_eval=False,
+                                                                    center_data=cfg.center_data)
+    test_dataloader, *_ = factory_fn(cfg.env_name,
+                                     batch_size=test_batch_size,
+                                     is_eval=True,
+                                     center_data=cfg.center_data,
+                                     weight_normalizer=weight_normalizer)
+
+
     dataset_kwargs = {
         'center_data': cfg.center_data,
         'weight_normalizer': weight_normalizer
@@ -225,15 +246,21 @@ def train(cfg):
     scale_factor = 1.0
     global_step = 0
     for epoch in range(epochs + 1):
-
         if cfg.track_agent_quality and epoch % 5 == 0:
             with torch.no_grad():
                 # get latents from the LDM using the DDIM sampler. Then use the VAE decoder
                 # to get the policies and evaluate their quality
-                gt_params_batch, measures = next(iter(test_dataloader))  # get realistic measures to condition on. TODO maybe make this set of measures fixed?
+                if cfg.use_language:
+                    gt_params_batch, (measures, text_labels) = next(iter(test_dataloader))  # get realistic measures to condition on. TODO maybe make this set of measures fixed?
+                else:
+                    gt_params_batch, measures = next(iter(test_dataloader))  # get realistic measures to condition on. TODO maybe make this set of measures fixed?
                 measures = measures.type(torch.float32).to(device)
 
-                samples = sampler.sample(model, shape=[test_batch_size, latent_channels, latent_size, latent_size], cond=measures)
+                if cfg.use_language:
+                    cond = model.text_to_cond(text_labels)
+                    samples = sampler.sample(model, shape=[test_batch_size, latent_channels, latent_size, latent_size], cond=cond)
+                else:
+                    samples = sampler.sample(model, shape=[test_batch_size, latent_channels, latent_size, latent_size], cond=measures)
                 samples *= (1 / scale_factor)
                 (rec_policies, rec_obsnorms) = autoencoder.decode(samples)
 
@@ -250,36 +277,36 @@ def train(cfg):
                 if epoch % 10 == 0 and cfg.reevaluate_archive_vae:
                     # evaluate the model on the entire archive
                     print('Evaluating model on entire archive...')
-                    subsample_results, image_results = evaluate_ldm_subsample(env_name=cfg.env_name, 
-                                                                            archive_df=train_archive[0], 
-                                                                            ldm=model, 
-                                                                            autoencoder=autoencoder, 
-                                                                            N=-1, 
-                                                                            image_path = cfg.image_path, 
-                                                                            suffix = str(epoch), 
-                                                                            ignore_first=True, 
-                                                                            sampler=sampler, 
+                    subsample_results, image_results = evaluate_ldm_subsample(env_name=cfg.env_name,
+                                                                            archive_df=train_archive[0],
+                                                                            ldm=model,
+                                                                            autoencoder=autoencoder,
+                                                                            N=-1,
+                                                                            image_path = cfg.image_path,
+                                                                            suffix = str(epoch),
+                                                                            ignore_first=True,
+                                                                            sampler=sampler,
                                                                             scale_factor=scale_factor,
                                                                             normalize_obs=True,
                                                                             clip_obs_rew=cfg.clip_obs_rew,
                                                                             uniform_sampling = False,
                                                                             latent_shape = (cfg.z_channels, cfg.z_height, cfg.z_height),
                                                                             **dataset_kwargs)
-                    uniform_subsample_results, uniform_image_results = evaluate_ldm_subsample(env_name=cfg.env_name, 
-                                                                            archive_df=train_archive[0], 
-                                                                            ldm=model, 
-                                                                            autoencoder=autoencoder, 
-                                                                            N=-1, 
-                                                                            image_path = cfg.image_path, 
-                                                                            suffix = "uniform_"+str(epoch), 
-                                                                            ignore_first=True, 
-                                                                            sampler=sampler, 
+                    uniform_subsample_results, uniform_image_results = evaluate_ldm_subsample(env_name=cfg.env_name,
+                                                                            archive_df=train_archive[0],
+                                                                            ldm=model,
+                                                                            autoencoder=autoencoder,
+                                                                            N=-1,
+                                                                            image_path = cfg.image_path,
+                                                                            suffix = "uniform_"+str(epoch),
+                                                                            ignore_first=True,
+                                                                            sampler=sampler,
                                                                             scale_factor=scale_factor,
                                                                             normalize_obs=True,
                                                                             clip_obs_rew=cfg.clip_obs_rew,
                                                                             uniform_sampling = True,
                                                                             latent_shape = (cfg.z_channels, cfg.z_height, cfg.z_height),
-                                                                            **dataset_kwargs)                    
+                                                                            **dataset_kwargs)
                     for key, val in subsample_results['Reconstructed'].items():
                         info['Archive/' + key] = val
                     for key, val in uniform_subsample_results['Reconstructed'].items():
@@ -303,6 +330,8 @@ def train(cfg):
         epoch_vlb_loss = 0
         epoch_grad_norm = 0
         for step, (policies, measures) in enumerate(train_dataloader):
+            if cfg.use_language:
+                measures, text_labels = measures
             optimizer.zero_grad()
             batch_size = measures.shape[0]
 
@@ -315,7 +344,11 @@ def train(cfg):
             # Algorithm 1 line 3: sample t uniformally for every example in the batch
             t = torch.randint(0, timesteps, (batch_size,), device=device).long()
 
-            losses, loss_dict, info_dict = gauss_diff.compute_training_losses(model, batch, t, model_kwargs={'cond': measures})
+            if cfg.use_language:
+                cond = model.text_to_cond(text_labels)
+            else:
+                cond = measures
+            losses, loss_dict, info_dict = gauss_diff.compute_training_losses(model, batch, t, model_kwargs={'cond': cond})
             loss = losses.mean()
 
             loss.backward()
@@ -352,19 +385,19 @@ def train(cfg):
     print('Saving final model checkpoint...')
     cp_name = f'diffusion_model_{cfg.env_name}_{datetime.now().strftime("%Y%m%d-%H%M")}.pt'
     torch.save(model.state_dict(), os.path.join(str(cfg.model_checkpoint_folder), cp_name))
-    
-    
+
+
     # evaluate the final model on the entire archive
     print('Evaluating final model on entire archive...')
-    subsample_results, image_results = evaluate_ldm_subsample(env_name=cfg.env_name, 
-                                                            archive_df=train_archive[0], 
-                                                            ldm=model, 
-                                                            autoencoder=autoencoder, 
-                                                            N=-1, 
-                                                            image_path = cfg.image_path, 
-                                                            suffix = "final", 
-                                                            ignore_first=False, 
-                                                            sampler=sampler, 
+    subsample_results, image_results = evaluate_ldm_subsample(env_name=cfg.env_name,
+                                                            archive_df=train_archive[0],
+                                                            ldm=model,
+                                                            autoencoder=autoencoder,
+                                                            N=-1,
+                                                            image_path = cfg.image_path,
+                                                            suffix = "final",
+                                                            ignore_first=False,
+                                                            sampler=sampler,
                                                             scale_factor=scale_factor,
                                                             normalize_obs=True,
                                                             clip_obs_rew=cfg.clip_obs_rew,
@@ -375,7 +408,7 @@ def train(cfg):
     if cfg.use_wandb:
         wandb.log({'Archive/recon_image_final': wandb.Image(image_results['Reconstructed'], caption=f"Final")})
         wandb.log({'Archive/original_image': wandb.Image(image_results['Original'], caption=f"Final")})
-        
+
         wandb.log({'Archive/' + key : val for key, val in subsample_results['Original'].items()})
 
 
