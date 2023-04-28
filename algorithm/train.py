@@ -221,7 +221,7 @@ def train(cfg):
 
             samples = sampler.sample(model, shape=[test_batch_size, latent_channels, latent_size, latent_size], cond=measures)
             samples *= (1 / scale_factor)
-            (rec_policies, rec_obsnorms), _ = autoencoder.decode(samples)
+            (rec_policies, rec_obsnorms) = autoencoder.decode(samples)
 
             info = evaluate_agent_quality(env_cfg,
                                           env,
@@ -230,6 +230,7 @@ def train(cfg):
                                           rec_obsnorms,
                                           test_batch_size,
                                           device=device,
+                                          normalize_obs=True,
                                           **dataset_kwargs)
 
             if epoch % 50 == 0 and cfg.reevaluate_archive_vae:
