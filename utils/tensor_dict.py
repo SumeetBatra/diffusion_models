@@ -71,7 +71,21 @@ class TensorDict(dict):
                     raise ValueError(f"Type {type(new_data)} not supported in set_data_func")
 
                 x[index] = n
+                
+    def __len__(self):
+        return len(self[list(self.keys())[0]])
+    
+    def std(self, dim = None):
+        res = TensorDict()
+        for key, value in self.items():
+            res[key] = value.std(dim)
+        return res
 
+    def mean(self, dim = None):
+        res = TensorDict()
+        for key, value in self.items():
+            res[key] = value.mean(dim)
+        return res
 
 def clone_tensordict(d: TensorDict) -> TensorDict:
     """Returns a cloned tensordict."""
