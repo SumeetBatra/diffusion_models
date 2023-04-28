@@ -27,10 +27,7 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
                             suffix: str = None, ignore_first: bool = False, clip_obs_rew: bool = False,
                             normalize_obs: bool = False,
                             center_data: bool = False,
-                            weight_denormalizer = None,
-                            weight_normalizer = None,
-                            obsnorm_denormalizer = None,
-                            obsnorm_normalizer = None,):
+                            weight_normalizer = None,):
 
     '''Randomly sample N elites from the archive. Evaluate the original elites and the reconstructed elites
     from the VAE. Compare the performance using a subsampled QD-Score. Compare the behavior accuracy using the l2 norm
@@ -73,7 +70,7 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
                                              seed=env_cfg.seed,
                                              qd_offset=reward_offset[env_name])
 
-    normalize_obs, normalize_returns = True, True
+    normalize_obs, normalize_returns = True, False
     if not ignore_first:
         original_reevaluated_archive = reevaluate_ppga_archive(env_cfg,
                                                                normalize_obs,
@@ -94,10 +91,7 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
                                                               reconstructed_agents=True,
                                                               vae=vae,
                                                               center_data=center_data,
-                                                              weight_denormalizer=weight_denormalizer,
-                                                              weight_normalizer=weight_normalizer,
-                                                              obsnorm_denormalizer=obsnorm_denormalizer,
-                                                              obsnorm_normalizer=obsnorm_normalizer)
+                                                              weight_normalizer=weight_normalizer,)
     print('Re-evaluated Reconstructed Archive')
     reconstructed_results = {
         'Coverage': reconstructed_evaluated_archive.stats.coverage,

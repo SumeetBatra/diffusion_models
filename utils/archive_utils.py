@@ -17,6 +17,7 @@ from models.vectorized import VectorizedActor
 from envs.brax_custom.brax_env import make_vec_env_brax
 from envs.brax_custom import reward_offset
 from utils.normalize import ObsNormalizer
+from utils.tensor_dict import TensorDict, cat_tensordicts
 
 
 def save_heatmap(archive, heatmap_path, emitter_loc: Optional[tuple[float, ...]] = None,
@@ -125,56 +126,31 @@ def evaluate(vec_agent, vec_env, num_dims, use_action_means=True, normalize_obs=
 
 def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, device,
                             center_data: bool = False,
-                            weight_denormalizer = None,
-                            weight_normalizer = None,
-                            obsnorm_denormalizer = None,
-                            obsnorm_normalizer = None,):
-    batch_size = len(original_agents)
-    weights_dict = {}
-    obsnorm_dict = {}
-    state_dict = original_agents[0].state_dict()
-    for key in state_dict.keys():
-        if 'weight' in key or 'bias' in key or 'logstd' in key:
-            params_batch = []
-            shape = state_dict[key].shape
-            for agent in original_agents:
-                params_batch.append(agent.state_dict()[key])
-            params_batch = torch.vstack(params_batch).reshape(batch_size, *tuple(shape))
-            weights_dict[key] = params_batch
-        
-        if 'obs_normalizer' in key:
-            params_batch = []
-            for agent in original_agents:
-                params_batch.append(agent.state_dict()[key])
-            params_batch = torch.vstack(params_batch)
-            obsnorm_dict[key] = params_batch
-    
-    gt_obsnorm_dict = {
-        'obs_rms.mean': obsnorm_dict['obs_normalizer.obs_rms.mean'],
-        'obs_rms.logstd' : torch.log(torch.sqrt(obsnorm_dict['obs_normalizer.obs_rms.var']+ 1e-8))
-    }
+                            weight_normalizer = None,):
 
-    
+    weights_dict = [TensorDict(p.state_dict()) for p in original_agents]
+    weights_dict = cat_tensordicts(weights_dict)
     if center_data:
-        weights_dict = weight_normalizer(weights_dict)
-        gt_obsnorm_dict = obsnorm_normalizer(gt_obsnorm_dict)
+        weights_dict = weight_normalizer.normalize(weights_dict)
 
-    (rec_agents, rec_obsnorms), _ = vae(weights_dict, gt_obsnorm_dict)
-    if original_agents[0].obs_normalizer is not None:
-        for i, (orig_agent, rec_agent) in enumerate(zip(original_agents, rec_agents)):
+    (rec_agents, rec_obsnorms), _ = vae(weights_dict)
+    
+    recon_params_batch = [TensorDict(p.state_dict()) for p in rec_agents]
+    recon_params_batch = cat_tensordicts(recon_params_batch)
+    recon_params_batch.update(rec_obsnorms)
 
-            rec_obsnorm = {key: rec_obsnorms[key][i] for key in rec_obsnorms.keys()}
-            if center_data:
-                rec_agent_state_dict = rec_agent.state_dict()
-                weight_denormalizer(rec_agent_state_dict)
+    if center_data:
+        weights_dict = weight_normalizer.denormalize(weights_dict)
+        recon_params_batch = weight_normalizer.denormalize(recon_params_batch)
 
-                obsnorm_denormalizer(rec_obsnorm)
-            
-            rec_agent.load_state_dict(rec_agent_state_dict)
+    recon_params_batch['obs_normalizer.obs_rms.var'] = torch.exp(recon_params_batch['obs_normalizer.obs_rms.logstd'] * 2)
+    recon_params_batch['obs_normalizer.obs_rms.count'] = weights_dict['obs_normalizer.obs_rms.count']
+    del recon_params_batch['obs_normalizer.obs_rms.logstd']      
+    # recon_params_batch['actor_logstd'] = weights_dict['actor_logstd']
 
-            rec_agent.obs_normalizer = orig_agent.obs_normalizer
-            rec_agent.obs_normalizer.obs_rms.mean = rec_obsnorm['obs_rms.mean']
-            rec_agent.obs_normalizer.obs_rms.var = torch.exp(2 * rec_obsnorm['obs_rms.logstd'])
+    for i, agent in enumerate(rec_agents):
+        agent.obs_normalizer = original_agents[i].obs_normalizer
+        agent.load_state_dict(recon_params_batch[i])
 
     return rec_agents
 
@@ -206,10 +182,7 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                             diffusion_model=None,
                             save_path=None,
                             center_data: bool = False,
-                            weight_denormalizer = None,
                             weight_normalizer = None,
-                            obsnorm_denormalizer = None,
-                            obsnorm_normalizer = None,
                             ):
     num_sols = len(original_archive)
     print(f'{num_sols=}')
@@ -254,10 +227,7 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
             if diffusion_model is None:
                 agent_batch = reconstruct_agents_from_vae(agent_batch, vae, device,
                                                           center_data=center_data,
-                                                          weight_denormalizer=weight_denormalizer,
-                                                          weight_normalizer=weight_normalizer,
-                                                          obsnorm_denormalizer=obsnorm_denormalizer,
-                                                          obsnorm_normalizer=obsnorm_normalizer)
+                                                          weight_normalizer=weight_normalizer,)
             else:
                 agent_batch = reconstruct_agents_from_ldm(agent_batch, measure_batch, vae, device, sampler,
                                                           scale_factor, diffusion_model)
