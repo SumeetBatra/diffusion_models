@@ -35,7 +35,7 @@ from utils.utilities import log
 def parse_args():
     parser = argparse.ArgumentParser()
     # experiment params
-    parser.add_argument('--env_name', choices=['walker2d', 'halfcheetah'])
+    parser.add_argument('--env_name', choices=['walker2d', 'halfcheetah', 'humanoid', 'ant'])
     parser.add_argument('--num_epochs', type=int, default=40)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--output_dir', type=str, default='results')
@@ -63,6 +63,10 @@ def parse_args():
     
     # misc
     parser.add_argument('--reevaluate_archive_vae', type=lambda x: bool(strtobool(x)), default=True, help='Evaluate the VAE on the entire archive every 50 epochs')
+    parser.add_argument('--center_data', type=lambda x: bool(strtobool(x)), default=True,
+                        help='Zero center the policy dataset with unit variance')
+    parser.add_argument('--clip_obs_rew', type=lambda x: bool(strtobool(x)), default=False,
+                        help='Clip obs and rewards b/w -10 and 10 in brax. Set to true if the PPGA archive trained with clipping enabled')
 
     args = parser.parse_args()
     cfg = AttrDict(vars(args))
@@ -175,21 +179,29 @@ def train(cfg):
 
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
-    train_batch_size, test_batch_size = 32, 8
-    train_dataloader, train_archive = shaped_elites_dataset_factory(cfg.env_name, cfg.merge_obsnorm, batch_size=train_batch_size, \
-                                               is_eval=False, inp_coef=cfg.inp_coef)
-    test_dataloader, test_archive = shaped_elites_dataset_factory(cfg.env_name, cfg.merge_obsnorm, batch_size=test_batch_size, \
-                                                is_eval=True,  inp_coef=cfg.inp_coef)
-    inp_coef = train_dataloader.dataset.inp_coef
+    train_batch_size, test_batch_size = 32, 50
+    train_dataloader, train_archive, weight_normalizer = shaped_elites_dataset_factory(cfg.env_name,
+                                                                                       batch_size=train_batch_size,
+                                                                                       is_eval=False,
+                                                                                       center_data=cfg.center_data)
+    test_dataloader, test_archive, *_ = shaped_elites_dataset_factory(cfg.env_name,
+                                                                      batch_size=test_batch_size,
+                                                                      is_eval=True,
+                                                                      center_data=cfg.center_data,
+                                                                      weight_normalizer=weight_normalizer)
+    dataset_kwargs = {
+        'center_data': cfg.center_data,
+        'weight_normalizer': weight_normalizer
+    }
 
+    rollouts_per_agent = 10  # to align ourselves with baselines
     if cfg.track_agent_quality:
         env_cfg = AttrDict({
             'env_name': cfg.env_name,
-            'env_batch_size': 100,
-            'num_dims': 2,
-            'envs_per_model': 1,
+            'env_batch_size': test_batch_size * rollouts_per_agent,
+            'num_dims': shared_params[cfg.env_name]['env_cfg']['num_dims'],
             'seed': 0,
-            'num_envs': 100,
+            'clip_obs_rew': cfg.clip_obs_rew
         })
 
         env = make_vec_env_brax(env_cfg)
@@ -204,14 +216,21 @@ def train(cfg):
         if cfg.track_agent_quality and epoch % 5 == 0 and epoch != 0:  # skip the 0th epoch b/c we need to calculate the scale factor first
             # get latents from the LDM using the DDIM sampler. Then use the VAE decoder
             # to get the policies and evaluate their quality
-            gt_params_batch, measures, obsnorms = next(iter(test_dataloader))  # get realistic measures to condition on. TODO maybe make this set of measures fixed?
+            gt_params_batch, measures = next(iter(test_dataloader))  # get realistic measures to condition on. TODO maybe make this set of measures fixed?
             measures = measures.type(torch.float32).to(device)
 
             samples = sampler.sample(model, shape=[test_batch_size, latent_channels, latent_size, latent_size], cond=measures)
             samples *= (1 / scale_factor)
-            rec_policies = autoencoder.decode(samples)
+            (rec_policies, rec_obsnorms), _ = autoencoder.decode(samples)
 
-            info = evaluate_agent_quality(env_cfg, env, gt_params_batch, rec_policies, obsnorms, test_batch_size, inp_coef, device, normalize_obs=not cfg.merge_obsnorm)
+            info = evaluate_agent_quality(env_cfg,
+                                          env,
+                                          gt_params_batch,
+                                          rec_policies,
+                                          rec_obsnorms,
+                                          test_batch_size,
+                                          device=device,
+                                          **dataset_kwargs)
 
             if epoch % 50 == 0 and cfg.reevaluate_archive_vae:
                 # evaluate the model on the entire archive
@@ -236,7 +255,7 @@ def train(cfg):
 
         epoch_simple_loss = 0
         epoch_vlb_loss = 0
-        for step, (policies, measures, _) in enumerate(train_dataloader):
+        for step, (policies, measures) in enumerate(train_dataloader):
             optimizer.zero_grad()
             batch_size = measures.shape[0]
 
