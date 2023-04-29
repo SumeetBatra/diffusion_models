@@ -175,6 +175,8 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
                                                               sampler=sampler,
                                                               scale_factor=scale_factor,
                                                               diffusion_model=ldm,
+                                                              center_data=center_data,
+                                                              weight_normalizer=weight_normalizer,
                                                               )
     reconstructed_results = {
         'Coverage': reconstructed_evaluated_archive.stats.coverage,

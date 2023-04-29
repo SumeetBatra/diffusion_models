@@ -28,9 +28,9 @@ from diffusion.ddim import DDIMSampler
 from envs.brax_custom.brax_env import make_vec_env_brax
 from utils.brax_utils import compare_rec_to_gt_policy, shared_params
 from utils.analysis import evaluate_ldm_subsample
-
+from utils.tensor_dict import TensorDict
 from utils.utilities import log
-
+import copy
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -44,8 +44,9 @@ def parse_args():
     parser.add_argument('--emb_channels', type=int, default=4)
     parser.add_argument('--z_channels', type=int, default=4)
     parser.add_argument('--z_height', type=int, default=4)
-    parser.add_argument('--ghn_hid', type=int, default=32)
-
+    parser.add_argument('--ghn_hid', type=int, default=8)
+    parser.add_argument('--enc_fc_hid', type=int, default=64)
+    parser.add_argument('--obsnorm_hid', type=int, default=64)
     # wandb args
     parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
@@ -56,8 +57,6 @@ def parse_args():
     parser.add_argument('--track_agent_quality', type=lambda x: bool(strtobool(x)), default=True)
 
     # training hyperparams
-    parser.add_argument('--merge_obsnorm', type=lambda x: bool(strtobool(x)), default=True)
-    parser.add_argument('--inp_coef', type=float, default=1.0)
     parser.add_argument('--autoencoder_cp_path', type=str)
     # parser.add_argument('--model_checkpoint', type=str, default=None, help='Load an existing diffusion model for additional training')
     
@@ -163,10 +162,12 @@ def train(cfg):
                                 obs_shape=obs_dim,
                                 action_shape=action_shape,
                                 z_height=cfg.z_height,
-                                conditional=False,
                                 ghn_hid=cfg.ghn_hid,
+                                enc_fc_hid = cfg.enc_fc_hid,
+                                obsnorm_hid=cfg.obsnorm_hid,
                                 )
-    autoencoder.load_state_dict(torch.load(str(autoencoder_checkpoint_path)))
+    vae_state_dict = torch.load(str(autoencoder_checkpoint_path))
+    autoencoder.load_state_dict(vae_state_dict)
     autoencoder.to(device)
     autoencoder.eval()
 
@@ -214,57 +215,58 @@ def train(cfg):
     for epoch in range(epochs + 1):
 
         if cfg.track_agent_quality and epoch % 5 == 0 and epoch != 0:  # skip the 0th epoch b/c we need to calculate the scale factor first
-            # get latents from the LDM using the DDIM sampler. Then use the VAE decoder
-            # to get the policies and evaluate their quality
-            gt_params_batch, measures = next(iter(test_dataloader))  # get realistic measures to condition on. TODO maybe make this set of measures fixed?
-            measures = measures.type(torch.float32).to(device)
+            with torch.no_grad():
+                # get latents from the LDM using the DDIM sampler. Then use the VAE decoder
+                # to get the policies and evaluate their quality
+                gt_params_batch, measures = next(iter(test_dataloader))  # get realistic measures to condition on. TODO maybe make this set of measures fixed?
+                measures = measures.type(torch.float32).to(device)
 
-            samples = sampler.sample(model, shape=[test_batch_size, latent_channels, latent_size, latent_size], cond=measures)
-            samples *= (1 / scale_factor)
-            (rec_policies, rec_obsnorms) = autoencoder.decode(samples)
+                samples = sampler.sample(model, shape=[test_batch_size, latent_channels, latent_size, latent_size], cond=measures)
+                samples *= (1 / scale_factor)
+                (rec_policies, rec_obsnorms) = autoencoder.decode(samples)
 
-            info = evaluate_agent_quality(env_cfg,
-                                          env,
-                                          gt_params_batch,
-                                          rec_policies,
-                                          rec_obsnorms,
-                                          test_batch_size,
-                                          device=device,
-                                          normalize_obs=True,
-                                          **dataset_kwargs)
+                info = evaluate_agent_quality(env_cfg,
+                                            env,
+                                            copy.deepcopy(gt_params_batch),
+                                            rec_policies,
+                                            rec_obsnorms,
+                                            test_batch_size,
+                                            device=device,
+                                            normalize_obs=True,
+                                            **dataset_kwargs)
 
-            if epoch % 50 == 0 and cfg.reevaluate_archive_vae:
-                # evaluate the model on the entire archive
-                print('Evaluating model on entire archive...')
-                subsample_results, image_results = evaluate_ldm_subsample(env_name=cfg.env_name, 
-                                                                          archive_df=train_archive[0], 
-                                                                          ldm=model, 
-                                                                          autoencoder=autoencoder, 
-                                                                          N=-1, 
-                                                                          image_path = cfg.image_path, 
-                                                                          suffix = str(epoch), 
-                                                                          ignore_first=True, 
-                                                                          sampler=sampler, 
-                                                                          scale_factor=scale_factor,
-                                                                          normalize_obs=True,
-                                                                          clip_obs_rew=cfg.clip_obs_rew,
-                                                                          **dataset_kwargs)
-                
-                for key, val in subsample_results['Reconstructed'].items():
-                    info['Archive/' + key] = val
-                
+                if epoch % 50 == 0 and cfg.reevaluate_archive_vae:
+                    # evaluate the model on the entire archive
+                    print('Evaluating model on entire archive...')
+                    subsample_results, image_results = evaluate_ldm_subsample(env_name=cfg.env_name, 
+                                                                            archive_df=train_archive[0], 
+                                                                            ldm=model, 
+                                                                            autoencoder=autoencoder, 
+                                                                            N=-1, 
+                                                                            image_path = cfg.image_path, 
+                                                                            suffix = str(epoch), 
+                                                                            ignore_first=True, 
+                                                                            sampler=sampler, 
+                                                                            scale_factor=scale_factor,
+                                                                            normalize_obs=True,
+                                                                            clip_obs_rew=cfg.clip_obs_rew,
+                                                                            **dataset_kwargs)
+                    
+                    for key, val in subsample_results['Reconstructed'].items():
+                        info['Archive/' + key] = val
+                    
 
-            # log items to tensorboard and wandb
-            if cfg.use_wandb:
-                for key, val in info.items():
-                    writer.add_scalar(key, val, global_step + 1)
+                # log items to tensorboard and wandb
+                if cfg.use_wandb:
+                    for key, val in info.items():
+                        writer.add_scalar(key, val, global_step + 1)
 
-                info.update({
-                    'global_step': global_step + 1,
-                    'epoch': epoch + 1
-                })
+                    info.update({
+                        'global_step': global_step + 1,
+                        'epoch': epoch + 1
+                    })
 
-                wandb.log(info)
+                    wandb.log(info)
 
         epoch_simple_loss = 0
         epoch_vlb_loss = 0
@@ -292,8 +294,8 @@ def train(cfg):
 
             loss.backward()
             # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            if step % 100 == 0:
-                log.info(f'grad norm: {grad_norm(model)}')
+            # if step % 100 == 0:
+            #     log.info(f'grad norm: {grad_norm(model)}')
             optimizer.step()
             global_step += 1
 
