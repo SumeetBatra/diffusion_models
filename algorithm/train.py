@@ -270,7 +270,7 @@ def train(cfg):
                                                                             autoencoder=autoencoder, 
                                                                             N=-1, 
                                                                             image_path = cfg.image_path, 
-                                                                            suffix = str(epoch), 
+                                                                            suffix = "uniform_"+str(epoch), 
                                                                             ignore_first=True, 
                                                                             sampler=sampler, 
                                                                             scale_factor=scale_factor,
@@ -308,6 +308,7 @@ def train(cfg):
             measures = measures.type(torch.float32).to(device)
 
             with torch.no_grad():
+                batch = autoencoder.encode(policies).sample().detach()
                 batch *= cfg.scale_factor
 
             # Algorithm 1 line 3: sample t uniformally for every example in the batch
