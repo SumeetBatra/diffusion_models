@@ -43,8 +43,10 @@ def parse_args():
     parser.add_argument('--emb_channels', type=int, default=4)
     parser.add_argument('--z_channels', type=int, default=4)
     parser.add_argument('--z_height', type=int, default=4)
-    parser.add_argument('--ghn_hid', type=int, default=32)
-    
+    parser.add_argument('--ghn_hid', type=int, default=8)
+    parser.add_argument('--enc_fc_hid', type=int, default=64)
+    parser.add_argument('--obsnorm_hid', type=int, default=64)
+
     # wandb
     parser.add_argument('--use_wandb', type=lambda x: bool(strtobool(x)), default=False)
     parser.add_argument('--wandb_project', type=str, default='policy_diffusion')
@@ -337,7 +339,13 @@ def train_autoencoder():
                                 z_height=args.z_height,
                                 conditional=args.conditional,
                                 ghn_hid=args.ghn_hid,
+                                enc_fc_hid = args.enc_fc_hid,
+                                obsnorm_hid=args.obsnorm_hid,
                                 )
+
+    log.info(f'Total number of parameters in the encoder: {sum(p.numel() for p in model.encoder.parameters() if p.requires_grad)}')
+    log.info(f'Total number of parameters in the decoder: {sum(p.numel() for p in model.decoder.parameters() if p.requires_grad)}')
+    log.info(f'Total number of paramers:{sum(p.numel() for p in model.parameters() if p.requires_grad)}')
 
     if args.load_from_checkpoint is not None:
         log.info(f'Loading an existing model saved at {args.load_from_checkpoint}')

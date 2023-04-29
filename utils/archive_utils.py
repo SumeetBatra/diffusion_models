@@ -18,7 +18,7 @@ from envs.brax_custom.brax_env import make_vec_env_brax
 from envs.brax_custom import reward_offset
 from utils.normalize import ObsNormalizer
 from utils.tensor_dict import TensorDict, cat_tensordicts
-
+from copy import deepcopy
 
 def save_heatmap(archive, heatmap_path, emitter_loc: Optional[tuple[float, ...]] = None,
                  forces: Optional[tuple[float, ...]] = None):
@@ -149,7 +149,7 @@ def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, de
     # recon_params_batch['actor_logstd'] = weights_dict['actor_logstd']
 
     for i, agent in enumerate(rec_agents):
-        agent.obs_normalizer = original_agents[i].obs_normalizer
+        agent.obs_normalizer = deepcopy(original_agents[i].obs_normalizer)
         agent.load_state_dict(recon_params_batch[i])
 
     return rec_agents
@@ -184,7 +184,7 @@ def reconstruct_agents_from_ldm(original_agents, original_measures, vae: nn.Modu
     # recon_params_batch['actor_logstd'] = weights_dict['actor_logstd']
 
     for i, agent in enumerate(rec_agents):
-        agent.obs_normalizer = original_agents[i].obs_normalizer
+        agent.obs_normalizer = deepcopy(original_agents[i].obs_normalizer)
         agent.load_state_dict(recon_params_batch[i])
 
     return rec_agents #original_agents

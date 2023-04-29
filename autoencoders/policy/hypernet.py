@@ -34,6 +34,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
                  conditional: bool = False,
                  ghn_hid: int = 64,
                  obsnorm_hid: int = 64,
+                 enc_fc_hid: int = 64,
                  ):
         """
         :param emb_channels: is the number of dimensions in the quantized embedding space
@@ -47,6 +48,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
                                     z_channels=z_channels,
                                     z_height=z_height,
                                     conditional=conditional,
+                                    fc_hid=enc_fc_hid,
                                     )
         
 
@@ -186,7 +188,7 @@ class ObsNormDecoder(nn.Module):
 
 class ModelEncoder(nn.Module):
     def __init__(self, obs_shape, action_shape, emb_channels, z_channels, z_height=4,
-                 regress_to_measure=False, measure_dim=2, conditional=False):
+                 regress_to_measure=False, measure_dim=2, conditional=False, fc_hid=64):
         super().__init__()
 
         self.conditional = conditional
@@ -210,6 +212,7 @@ class ModelEncoder(nn.Module):
         self.z_channels = z_channels
         self.emb_channels = emb_channels
         self.z_height = z_height
+        self.fc_hid = fc_hid
         self.regress_to_measure = regress_to_measure
         assert not (self.regress_to_measure and self.conditional), "Cannot regress to measure and be conditional on measure at the same time"
         self.measure_dim = measure_dim
@@ -230,11 +233,11 @@ class ModelEncoder(nn.Module):
 
             elif 'bias' in name or 'obs_normalizer' in name:
                 shape = (1, 1,) + tuple(param.data.shape) + (1,)
-                self.cnns[key_name], op_shape = self._create_fc_backbone(shape)
+                self.cnns[key_name], op_shape = self._create_fc_backbone(shape, num_hidden=self.fc_hid)
 
             else:
                 shape = (1,) + tuple(param.data.shape) + (1,)
-                self.cnns[key_name], op_shape = self._create_fc_backbone(shape)
+                self.cnns[key_name], op_shape = self._create_fc_backbone(shape, num_hidden=self.fc_hid)
 
             total_op_shape += np.prod(op_shape)
 
@@ -304,7 +307,7 @@ class ModelEncoder(nn.Module):
                 break
         return cnn, shape
 
-    def _create_fc_backbone(self, shape, num_hidden=256):
+    def _create_fc_backbone(self, shape, num_hidden):
         fc = nn.Sequential()
         fc.add_module('fc1', nn.Linear(shape[2], num_hidden))
         fc.add_module('relu1', nn.ReLU(inplace=True))
