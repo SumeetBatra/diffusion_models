@@ -263,6 +263,7 @@ def train(cfg):
                                                                             normalize_obs=True,
                                                                             clip_obs_rew=cfg.clip_obs_rew,
                                                                             uniform_sampling = False,
+                                                                            latent_shape = (cfg.z_channels, cfg.z_height, cfg.z_height),
                                                                             **dataset_kwargs)
                     uniform_subsample_results, uniform_image_results = evaluate_ldm_subsample(env_name=cfg.env_name, 
                                                                             archive_df=train_archive[0], 
