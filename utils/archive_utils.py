@@ -165,9 +165,10 @@ def reconstruct_agents_from_ldm(original_agents, original_measures, vae: nn.Modu
     original_measures = torch.tensor(original_measures).reshape(batch_size, -1).to(device).to(torch.float32)
     if uniform_sampling:
         distribution = torch.distributions.uniform.Uniform(torch.Tensor([0.0]),torch.Tensor([1.0]))
+        original_measures = distribution.sample(original_measures.shape).squeeze().to(device).to(torch.float32)
 
-        original_measures = distribution.sample(original_measures.shape)
-    samples = sampler.sample(diffusion_model, shape=[batch_size, 4, 4, 4], cond=original_measures)
+
+    samples = sampler.sample(diffusion_model, shape=[batch_size] + list(latent_shape), cond=original_measures)
     samples *= (1 / scale_factor)
     (rec_agents, rec_obsnorms) = vae.decode(samples)
 
@@ -210,6 +211,7 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                             center_data: bool = False,
                             weight_normalizer = None,
                             uniform_sampling = False,
+                            latent_shape = None,
                             ):
     num_sols = len(original_archive)
     print(f'{num_sols=}')
@@ -260,6 +262,7 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                                                           scale_factor, diffusion_model,
                                                           center_data=center_data,
                                                           weight_normalizer=weight_normalizer,
+                                                          latent_shape=latent_shape,
                                                           uniform_sampling=uniform_sampling)
 
         if env_cfg.env_batch_size % len(agent_batch) != 0 and len(original_archive) % solution_batch_size != 0:

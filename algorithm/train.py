@@ -111,10 +111,6 @@ def train(cfg):
     cfg.image_path = os.path.join(dm_dir, 'images')
     os.makedirs(cfg.image_path, exist_ok=True)
 
-    # add args to exp_dir
-    with open(os.path.join(dm_dir, 'args.json'), 'w') as f:
-        json.dump(cfg, f, indent=4)
-
     # set seed
     random.seed(cfg.seed)
     np.random.seed(cfg.seed)
@@ -125,14 +121,6 @@ def train(cfg):
     obs_dim, action_shape = shared_params[cfg.env_name]['obs_dim'], np.array([shared_params[cfg.env_name]['action_dim']])
 
 
-    if cfg.use_wandb:
-        writer = SummaryWriter(f"runs/{exp_name}")
-        config_wandb(wandb_project=cfg.wandb_project,
-                     wandb_group=cfg.wandb_group,
-                     run_name=cfg.wandb_run_name,
-                     entity=cfg.wandb_entity,
-                     tags=cfg.wandb_tag,
-                     cfg=cfg)
     autoencoder_checkpoint_path = Path(cfg.autoencoder_cp_path)
     log.debug(f'Loading autoencoder checkpoint {cfg.autoencoder_cp_path}')
 
@@ -197,6 +185,28 @@ def train(cfg):
         'weight_normalizer': weight_normalizer
     }
 
+    print("Calculating scale factor...")
+    gt_params_batch, measures = next(iter(train_dataloader))
+    with torch.no_grad():
+        batch = autoencoder.encode(gt_params_batch).sample().detach()
+        # rescale the embeddings to be unit variance
+        std = batch.flatten().std()
+        scale_factor = 1. / std
+        cfg.scale_factor = scale_factor.item()
+
+    # add args to exp_dir
+    with open(os.path.join(dm_dir, 'args.json'), 'w') as f:
+        json.dump(cfg, f, indent=4)
+
+    if cfg.use_wandb:
+        writer = SummaryWriter(f"runs/{exp_name}")
+        config_wandb(wandb_project=cfg.wandb_project,
+                     wandb_group=cfg.wandb_group,
+                     run_name=cfg.wandb_run_name,
+                     entity=cfg.wandb_entity,
+                     tags=cfg.wandb_tag,
+                     cfg=cfg)
+
     rollouts_per_agent = 10  # to align ourselves with baselines
     if cfg.track_agent_quality:
         env_cfg = AttrDict({
@@ -216,7 +226,7 @@ def train(cfg):
     global_step = 0
     for epoch in range(epochs + 1):
 
-        if cfg.track_agent_quality and epoch % 5 == 0 and epoch != 0:  # skip the 0th epoch b/c we need to calculate the scale factor first
+        if cfg.track_agent_quality and epoch % 5 == 0:
             with torch.no_grad():
                 # get latents from the LDM using the DDIM sampler. Then use the VAE decoder
                 # to get the policies and evaluate their quality
@@ -267,10 +277,12 @@ def train(cfg):
                                                                             normalize_obs=True,
                                                                             clip_obs_rew=cfg.clip_obs_rew,
                                                                             uniform_sampling = True,
+                                                                            latent_shape = (cfg.z_channels, cfg.z_height, cfg.z_height),
                                                                             **dataset_kwargs)                    
                     for key, val in subsample_results['Reconstructed'].items():
                         info['Archive/' + key] = val
-                    
+                    for key, val in uniform_subsample_results['Reconstructed'].items():
+                        info['Archive/Uniform_' + key] = val
 
                 # log items to tensorboard and wandb
                 if cfg.use_wandb:
@@ -285,7 +297,7 @@ def train(cfg):
                     wandb.log(info)
                     if cfg.reevaluate_archive_vae:
                         wandb.log({'Archive/recon_image': wandb.Image(image_results['Reconstructed'], caption=f"Epoch {epoch + 1}")})
-
+                        wandb.log({'Archive/Uniform_recon_image': wandb.Image(uniform_image_results['Reconstructed'], caption=f"Epoch {epoch + 1}")})
         epoch_simple_loss = 0
         epoch_vlb_loss = 0
         epoch_grad_norm = 0
@@ -296,14 +308,7 @@ def train(cfg):
             measures = measures.type(torch.float32).to(device)
 
             with torch.no_grad():
-                batch = autoencoder.encode(policies).sample().detach()
-                # rescale the embeddings to be unit variance -- on first batch only
-                if epoch == 0 and step == 0:
-                    print("Calculating scale factor...")
-                    std = batch.flatten().std()
-                    scale_factor = 1. / std
-                    cfg.scale_factor = scale_factor.item()
-                batch *= scale_factor
+                batch *= cfg.scale_factor
 
             # Algorithm 1 line 3: sample t uniformally for every example in the batch
             t = torch.randint(0, timesteps, (batch_size,), device=device).long()

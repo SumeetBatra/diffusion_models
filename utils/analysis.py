@@ -126,6 +126,7 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
                             normalize_obs: bool = False,
                             uniform_sampling: bool = False,
                             center_data: bool = False,
+                            latent_shape = None,
                             weight_normalizer = None):
     if type(archive_df) == str:
         with open(archive_df, 'rb') as f:
@@ -179,6 +180,7 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
                                                               center_data=center_data,
                                                               uniform_sampling=uniform_sampling,
                                                               weight_normalizer=weight_normalizer,
+                                                              latent_shape = latent_shape,
                                                               )
     reconstructed_results = {
         'Coverage': reconstructed_evaluated_archive.stats.coverage,
