@@ -124,6 +124,7 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
                            image_path: str = None, suffix: str = None, ignore_first: bool = False, sampler=None,
                            scale_factor=None, clip_obs_rew: bool = False,
                             normalize_obs: bool = False,
+                            uniform_sampling: bool = False,
                             center_data: bool = False,
                             weight_normalizer = None):
     if type(archive_df) == str:
@@ -176,6 +177,7 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
                                                               scale_factor=scale_factor,
                                                               diffusion_model=ldm,
                                                               center_data=center_data,
+                                                              uniform_sampling=uniform_sampling,
                                                               weight_normalizer=weight_normalizer,
                                                               )
     reconstructed_results = {

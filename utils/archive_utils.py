@@ -158,9 +158,15 @@ def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, de
 def reconstruct_agents_from_ldm(original_agents, original_measures, vae: nn.Module, device, sampler, scale_factor,
                                 diffusion_model,
                                 center_data: bool = False,
+                                uniform_sampling: bool = False,
+                                latent_shape = (4,4,4),
                                 weight_normalizer = None):
     batch_size = len(original_measures)
     original_measures = torch.tensor(original_measures).reshape(batch_size, -1).to(device).to(torch.float32)
+    if uniform_sampling:
+        distribution = torch.distributions.uniform.Uniform(torch.Tensor([0.0]),torch.Tensor([1.0]))
+
+        original_measures = distribution.sample(original_measures.shape)
     samples = sampler.sample(diffusion_model, shape=[batch_size, 4, 4, 4], cond=original_measures)
     samples *= (1 / scale_factor)
     (rec_agents, rec_obsnorms) = vae.decode(samples)
@@ -203,6 +209,7 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                             save_path=None,
                             center_data: bool = False,
                             weight_normalizer = None,
+                            uniform_sampling = False,
                             ):
     num_sols = len(original_archive)
     print(f'{num_sols=}')
@@ -252,7 +259,8 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                 agent_batch = reconstruct_agents_from_ldm(agent_batch, measure_batch, vae, device, sampler,
                                                           scale_factor, diffusion_model,
                                                           center_data=center_data,
-                                                          weight_normalizer=weight_normalizer,)
+                                                          weight_normalizer=weight_normalizer,
+                                                          uniform_sampling=uniform_sampling)
 
         if env_cfg.env_batch_size % len(agent_batch) != 0 and len(original_archive) % solution_batch_size != 0:
             del vec_env

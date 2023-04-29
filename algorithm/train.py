@@ -252,8 +252,22 @@ def train(cfg):
                                                                             scale_factor=scale_factor,
                                                                             normalize_obs=True,
                                                                             clip_obs_rew=cfg.clip_obs_rew,
+                                                                            uniform_sampling = False,
                                                                             **dataset_kwargs)
-                    
+                    uniform_subsample_results, uniform_image_results = evaluate_ldm_subsample(env_name=cfg.env_name, 
+                                                                            archive_df=train_archive[0], 
+                                                                            ldm=model, 
+                                                                            autoencoder=autoencoder, 
+                                                                            N=-1, 
+                                                                            image_path = cfg.image_path, 
+                                                                            suffix = str(epoch), 
+                                                                            ignore_first=True, 
+                                                                            sampler=sampler, 
+                                                                            scale_factor=scale_factor,
+                                                                            normalize_obs=True,
+                                                                            clip_obs_rew=cfg.clip_obs_rew,
+                                                                            uniform_sampling = True,
+                                                                            **dataset_kwargs)                    
                     for key, val in subsample_results['Reconstructed'].items():
                         info['Archive/' + key] = val
                     
@@ -341,7 +355,7 @@ def train(cfg):
                                                             autoencoder=autoencoder, 
                                                             N=-1, 
                                                             image_path = cfg.image_path, 
-                                                            suffix = str(epoch), 
+                                                            suffix = "final", 
                                                             ignore_first=False, 
                                                             sampler=sampler, 
                                                             scale_factor=scale_factor,
