@@ -344,7 +344,8 @@ def train_autoencoder():
                                 )
 
     log.info(f'Total number of parameters in the encoder: {sum(p.numel() for p in model.encoder.parameters() if p.requires_grad)}')
-    log.info(f'Total number of parameters in the decoder: {sum(p.numel() for p in model.decoder.parameters() if p.requires_grad)}')
+    log.info(f'Total number of parameters in policy the decoder: {sum(p.numel() for p in model.decoder.parameters() if p.requires_grad)}')
+    log.info(f'Total number of parameters in obs_norm decoder {sum(p.numel() for p in model.obsnorm_decoder.parameters() if p.requires_grad)}')
     log.info(f'Total number of paramers:{sum(p.numel() for p in model.parameters() if p.requires_grad)}')
 
     if args.load_from_checkpoint is not None:
