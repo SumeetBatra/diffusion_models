@@ -235,7 +235,7 @@ def train(cfg):
                                             normalize_obs=True,
                                             **dataset_kwargs)
 
-                if epoch % 50 == 0 and cfg.reevaluate_archive_vae:
+                if epoch % 10 == 0 and cfg.reevaluate_archive_vae:
                     # evaluate the model on the entire archive
                     print('Evaluating model on entire archive...')
                     subsample_results, image_results = evaluate_ldm_subsample(env_name=cfg.env_name, 
