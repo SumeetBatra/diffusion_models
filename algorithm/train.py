@@ -66,6 +66,8 @@ def parse_args():
                         help='Zero center the policy dataset with unit variance')
     parser.add_argument('--clip_obs_rew', type=lambda x: bool(strtobool(x)), default=False,
                         help='Clip obs and rewards b/w -10 and 10 in brax. Set to true if the PPGA archive trained with clipping enabled')
+    parser.add_argument('--grad_clip', type=lambda x: bool(strtobool(x)), default=False,
+                        help = 'Clip gradients during backprop')
 
     args = parser.parse_args()
     cfg = AttrDict(vars(args))
@@ -267,9 +269,12 @@ def train(cfg):
                     })
 
                     wandb.log(info)
+                    if cfg.reevaluate_archive_vae:
+                        wandb.log({'Archive/recon_image': wandb.Image(image_results['Reconstructed'], caption=f"Epoch {epoch + 1}")})
 
         epoch_simple_loss = 0
         epoch_vlb_loss = 0
+        epoch_grad_norm = 0
         for step, (policies, measures) in enumerate(train_dataloader):
             optimizer.zero_grad()
             batch_size = measures.shape[0]
@@ -293,12 +298,13 @@ def train(cfg):
             loss = losses.mean()
 
             loss.backward()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            # if step % 100 == 0:
-            #     log.info(f'grad norm: {grad_norm(model)}')
+            if cfg.grad_clip:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
             optimizer.step()
             global_step += 1
 
+            epoch_grad_norm += grad_norm(model)
             epoch_simple_loss += loss_dict['losses/simple_loss']
             epoch_vlb_loss += loss_dict['losses/vlb_loss']
 
@@ -312,11 +318,12 @@ def train(cfg):
                 })
 
         # logging at the per-epoch timescale
-        log.debug(f'Epoch: {epoch} Simple loss: {epoch_simple_loss / len(train_dataloader)}')
+        log.debug(f'Epoch: {epoch} Simple loss: {epoch_simple_loss / len(train_dataloader)}, Vlb Loss: {epoch_vlb_loss / len(train_dataloader)}')
         if cfg.use_wandb:
             wandb.log({
                 'losses/simple_loss': epoch_simple_loss / len(train_dataloader),
                 'losses/vlb_loss': epoch_vlb_loss / len(train_dataloader),
+                'grad_norm': epoch_grad_norm / len(train_dataloader),
                 'epoch': epoch + 1,
                 'global_step': global_step + 1
             })
@@ -324,8 +331,31 @@ def train(cfg):
     print('Saving final model checkpoint...')
     cp_name = f'diffusion_model_{cfg.env_name}_{datetime.now().strftime("%Y%m%d-%H%M")}.pt'
     torch.save(model.state_dict(), os.path.join(str(cfg.model_checkpoint_folder), cp_name))
-    # save the cfg
-    save_cfg(cfg.model_checkpoint_folder, cfg)
+    
+    
+    # evaluate the final model on the entire archive
+    print('Evaluating final model on entire archive...')
+    subsample_results, image_results = evaluate_ldm_subsample(env_name=cfg.env_name, 
+                                                            archive_df=train_archive[0], 
+                                                            ldm=model, 
+                                                            autoencoder=autoencoder, 
+                                                            N=-1, 
+                                                            image_path = cfg.image_path, 
+                                                            suffix = str(epoch), 
+                                                            ignore_first=False, 
+                                                            sampler=sampler, 
+                                                            scale_factor=scale_factor,
+                                                            normalize_obs=True,
+                                                            clip_obs_rew=cfg.clip_obs_rew,
+                                                            **dataset_kwargs)
+    log.debug(f"Final Reconstruction Results: {subsample_results['Reconstructed']}")
+    log.debug(f"Original Archive Reevaluated Results: {subsample_results['Original']}")
+
+    if cfg.use_wandb:
+        wandb.log({'Archive/recon_image_final': wandb.Image(image_results['Reconstructed'], caption=f"Final")})
+        wandb.log({'Archive/original_image': wandb.Image(image_results['Original'], caption=f"Final")})
+        
+        wandb.log({'Archive/' + key : val for key, val in subsample_results['Original'].items()})
 
 
 if __name__ == '__main__':
