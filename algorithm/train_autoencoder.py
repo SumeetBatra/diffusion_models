@@ -66,6 +66,7 @@ def parse_args():
     parser.add_argument('--load_from_checkpoint', type=str, default=None, help='Load an existing model from a checkpoint for additional training')
     parser.add_argument('--center_data', type=lambda x: bool(strtobool(x)), default=True, help='Zero center the policy dataset with unit variance')
     parser.add_argument('--clip_obs_rew', type=lambda x: bool(strtobool(x)), default=False, help='Clip obs and rewards b/w -10 and 10 in brax. Set to true if the PPGA archive trained with clipping enabled')
+    parser.add_argument('--cut_out', type=lambda x: bool(strtobool(x)), default=False, help='cut out elites from the archive that have measure between [0.5,0.5] and [0.6,0.6]')
 
     args = parser.parse_args()
     return args
@@ -189,7 +190,8 @@ def shaped_elites_dataset_factory(env_name,
                                   is_eval=False,
                                   center_data: bool = False,
                                   weight_normalizer: Optional[WeightNormalizer] = None,
-                                  use_language: bool = False):
+                                  use_language: bool = False,
+                                  cut_out = False,):
     archive_data_path = f'data/{env_name}'
     archive_dfs = []
 
@@ -252,7 +254,8 @@ def shaped_elites_dataset_factory(env_name,
                                              eval_batch_size=batch_size if
                                              is_eval else None,
                                              center_data=center_data,
-                                             weight_normalizer=weight_normalizer)
+                                             weight_normalizer=weight_normalizer,
+                                             cut_out=cut_out)
 
     weight_normalizer = s_elite_dataset.normalizer
     return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs, weight_normalizer
@@ -397,11 +400,13 @@ def train_autoencoder():
     dataloader, train_archive, weight_normalizer = shaped_elites_dataset_factory(args.env_name,
                                                                                  batch_size=train_batch_size,
                                                                                  is_eval=False,
-                                                                                 center_data=args.center_data)
+                                                                                 center_data=args.center_data,
+                                                                                 cut_out=args.cut_out)
     test_dataloader, test_archive, *_ = shaped_elites_dataset_factory(args.env_name,
                                                                       batch_size=test_batch_size,
                                                                       is_eval=True,
                                                                       center_data=args.center_data,
+                                                                      cut_out=args.cut_out,
                                                                       weight_normalizer=weight_normalizer)
 
     # log.debug(f'{weight_mean_dict=}, {weight_std_dict=}')

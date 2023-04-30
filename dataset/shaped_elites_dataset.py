@@ -48,6 +48,7 @@ class ShapedEliteDataset(Dataset):
                  is_eval: bool = False,
                  eval_batch_size: Optional[int] = 8,
                  center_data: bool = False,
+                 cut_out: bool = False,
                  weight_normalizer: Optional[WeightNormalizer] = None):
         archive_df = pandas.concat(archive_dfs)
 
@@ -55,12 +56,21 @@ class ShapedEliteDataset(Dataset):
         self.action_shape = action_shape
         self.device = device
         self.is_eval = is_eval
+        self.cut_out = cut_out
 
         self.measures_list = archive_df.filter(regex='measure*').to_numpy()
         self.metadata = archive_df.filter(regex='metadata*').to_numpy()
         self.objective_list = archive_df['objective'].to_numpy()
 
         elites_list = archive_df.filter(regex='solution*').to_numpy()
+
+        if cut_out:
+            indices_to_cut = np.argwhere((self.measures_list[:,0] > 0.5) * (self.measures_list[:,1] > 0.5) * (self.measures_list[:,0] < 0.6) * (self.measures_list[:,1] < 0.6))
+            elites_list = np.delete(elites_list, indices_to_cut, axis=0)
+            self.measures_list = np.delete(self.measures_list, indices_to_cut, axis=0)
+            self.metadata = np.delete(self.metadata, indices_to_cut, axis=0)
+            self.objective_list = np.delete(self.objective_list, indices_to_cut, axis=0)
+
 
         if self.is_eval:
             # indices shall be eval_batch_size number of indices spaced out (by objective) evenly across the elites_list
