@@ -66,7 +66,7 @@ def parse_args():
                         help='Zero center the policy dataset with unit variance')
     parser.add_argument('--clip_obs_rew', type=lambda x: bool(strtobool(x)), default=False,
                         help='Clip obs and rewards b/w -10 and 10 in brax. Set to true if the PPGA archive trained with clipping enabled')
-    parser.add_argument('--grad_clip', type=lambda x: bool(strtobool(x)), default=False,
+    parser.add_argument('--grad_clip', type=lambda x: bool(strtobool(x)), default=True,
                         help = 'Clip gradients during backprop')
 
     parser.add_argument('--use_language', type=lambda x: bool(strtobool(x)), default=False)
