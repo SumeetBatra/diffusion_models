@@ -188,7 +188,8 @@ def shaped_elites_dataset_factory(env_name,
                                   batch_size=32,
                                   is_eval=False,
                                   center_data: bool = False,
-                                  weight_normalizer: Optional[WeightNormalizer] = None):
+                                  weight_normalizer: Optional[WeightNormalizer] = None,
+                                  use_language: bool = False):
     archive_data_path = f'data/{env_name}'
     archive_dfs = []
 
@@ -198,6 +199,13 @@ def shaped_elites_dataset_factory(env_name,
             log.info(f'Loading archive at {path}')
             archive_df = pickle.load(f)
             archive_dfs.append(archive_df)
+
+    if use_language:
+        text_label_paths = sorted(glob.glob(archive_data_path + '/text_labels_*.pkl'))
+        path = text_label_paths[-1]
+        with open(path, 'rb') as f:
+            log.info(f'Loading text labels from {path}')
+            text_labels = pickle.load(f)
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -227,52 +235,27 @@ def shaped_elites_dataset_factory(env_name,
         # centroids
         archive_dfs = [cvt_archive.as_pandas(include_solutions=True, include_metadata=True)]
 
-    s_elite_dataset = ShapedEliteDataset(archive_dfs,
-                                         obs_dim=obs_dim,
-                                         action_shape=action_shape,
-                                         device=device,
-                                         is_eval=is_eval,
-                                         eval_batch_size=batch_size if is_eval else None,
-                                         center_data=center_data,
-                                         weight_normalizer=weight_normalizer)
+    if use_language:
+        s_elite_dataset = LangShapedEliteDataset(archive_dfs, obs_dim=obs_dim,
+                                                 action_shape=action_shape,
+                                                 device=device,
+                                                 is_eval=is_eval,
+                                                 eval_batch_size=batch_size if
+                                                 is_eval else None,
+                                                 center_data=center_data,
+                                                 weight_normalizer=weight_normalizer,
+                                                 text_labels=text_labels)
+    else:
+        s_elite_dataset = ShapedEliteDataset(archive_dfs, obs_dim=obs_dim,
+                                             action_shape=action_shape,
+                                             device=device, is_eval=is_eval,
+                                             eval_batch_size=batch_size if
+                                             is_eval else None,
+                                             center_data=center_data,
+                                             weight_normalizer=weight_normalizer)
 
     weight_normalizer = s_elite_dataset.normalizer
     return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs, weight_normalizer
-
-def lang_shaped_elites_dataset_factory(env_name, merge_obsnorm = True, batch_size=32, is_eval=False, inp_coef=0.25):
-    archive_data_path = f'data/{env_name}'
-    archive_dfs = []
-
-    archive_df_paths = glob.glob(archive_data_path + '/archive*100x100*.pkl')
-    assert len(archive_df_paths) == 1
-    for path in archive_df_paths:
-        with open(path, 'rb') as f:
-            log.info(f'Loading archive at {path}')
-            archive_df = pickle.load(f)
-            archive_dfs.append(archive_df)
-
-    text_label_paths = sorted(glob.glob(archive_data_path + '/text_labels_*.pkl'))
-    path = text_label_paths[-1]
-    with open(path, 'rb') as f:
-        log.info(f'Loading text labels from {path}')
-        text_labels = pickle.load(f)
-
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-    obs_dim, action_shape = shared_params[env_name]['obs_dim'], np.array([shared_params[env_name]['action_dim']])
-
-    s_elite_dataset = LangShapedEliteDataset(archive_dfs,
-                                         obs_dim=obs_dim,
-                                         action_shape=action_shape,
-                                         device=device,
-                                         normalize_obs=merge_obsnorm,
-                                         is_eval=is_eval,
-                                         inp_coef=inp_coef,
-                                         eval_batch_size=batch_size if is_eval else None,
-                                         text_labels=text_labels,
-                                         )
-
-    return DataLoader(s_elite_dataset, batch_size=batch_size, shuffle=not is_eval), archive_dfs
 
 
 def mse_loss_from_weights_dict(target_weights_dict: TensorDict, pred_weights_dict: TensorDict):

@@ -20,7 +20,7 @@ from torch.utils.data import DataLoader
 from models.unet import num_to_groups, Unet
 from models.cond_unet import ConditionalUNet, LangConditionalUNet
 from autoencoders.policy.hypernet import HypernetAutoEncoder as AutoEncoder
-from algorithm.train_autoencoder import evaluate_agent_quality, shaped_elites_dataset_factory, lang_shaped_elites_dataset_factory
+from algorithm.train_autoencoder import evaluate_agent_quality, shaped_elites_dataset_factory
 from dataset.shaped_elites_dataset import ShapedEliteDataset
 from diffusion.gaussian_diffusion import GaussianDiffusion, cosine_beta_schedule, linear_beta_schedule
 from diffusion.latent_diffusion import LatentDiffusion
@@ -80,7 +80,11 @@ def parse_args():
 def grad_norm(model):
     sqsum = 0.0
     for p in model.parameters():
-        sqsum += (p.grad ** 2).sum().item()
+        if p.grad is None:
+            p_grad = torch.tensor(0)
+        else:
+            p_grad = p.grad
+        sqsum += (p_grad ** 2).sum().item()
     return np.sqrt(sqsum)
 
 
@@ -186,19 +190,14 @@ def train(cfg):
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
     train_batch_size, test_batch_size = 32, 50
-    if cfg.use_language:
-        factory_fn = lang_shaped_elites_dataset_factory
-    else:
-        factory_fn = shaped_elites_dataset_factory
-    train_dataloader, train_archive, weight_normalizer = factory_fn(cfg.env_name,
-                                                                    batch_size=train_batch_size,
-                                                                    is_eval=False,
-                                                                    center_data=cfg.center_data)
-    test_dataloader, *_ = factory_fn(cfg.env_name,
-                                     batch_size=test_batch_size,
-                                     is_eval=True,
-                                     center_data=cfg.center_data,
-                                     weight_normalizer=weight_normalizer)
+    train_dataloader, train_archive, weight_normalizer = shaped_elites_dataset_factory(
+        cfg.env_name, batch_size=train_batch_size, is_eval=False,
+        center_data=cfg.center_data,
+        use_language=cfg.use_language)
+    test_dataloader, *_ = shaped_elites_dataset_factory(
+        cfg.env_name, batch_size=test_batch_size, is_eval=True,
+        center_data=cfg.center_data, weight_normalizer=weight_normalizer,
+        use_language=cfg.use_language)
 
 
     dataset_kwargs = {
@@ -254,6 +253,7 @@ def train(cfg):
                     gt_params_batch, (measures, text_labels) = next(iter(test_dataloader))  # get realistic measures to condition on. TODO maybe make this set of measures fixed?
                 else:
                     gt_params_batch, measures = next(iter(test_dataloader))  # get realistic measures to condition on. TODO maybe make this set of measures fixed?
+                    text_labels = None
                 measures = measures.type(torch.float32).to(device)
 
                 if cfg.use_language:
@@ -277,9 +277,13 @@ def train(cfg):
                 if epoch % 10 == 0 and cfg.reevaluate_archive_vae:
                     # evaluate the model on the entire archive
                     print('Evaluating model on entire archive...')
+                    reconstruction_model = model
+                    if cfg.use_language:
+                        # Not enough variety in the language conditions to reconstruct meaningful coverage
+                        reconstruction_model = None
                     subsample_results, image_results = evaluate_ldm_subsample(env_name=cfg.env_name,
                                                                             archive_df=train_archive[0],
-                                                                            ldm=model,
+                                                                            ldm=reconstruction_model,
                                                                             autoencoder=autoencoder,
                                                                             N=-1,
                                                                             image_path = cfg.image_path,
@@ -294,7 +298,7 @@ def train(cfg):
                                                                             **dataset_kwargs)
                     uniform_subsample_results, uniform_image_results = evaluate_ldm_subsample(env_name=cfg.env_name,
                                                                             archive_df=train_archive[0],
-                                                                            ldm=model,
+                                                                            ldm=reconstruction_model,
                                                                             autoencoder=autoencoder,
                                                                             N=-1,
                                                                             image_path = cfg.image_path,
@@ -386,12 +390,16 @@ def train(cfg):
     cp_name = f'diffusion_model_{cfg.env_name}_{datetime.now().strftime("%Y%m%d-%H%M")}.pt'
     torch.save(model.state_dict(), os.path.join(str(cfg.model_checkpoint_folder), cp_name))
 
+    reconstruction_model = model
+    if cfg.use_language:
+        # Not enough variety in the language conditions to reconstruct meaningful coverage
+        reconstruction_model = None
 
     # evaluate the final model on the entire archive
     print('Evaluating final model on entire archive...')
     subsample_results, image_results = evaluate_ldm_subsample(env_name=cfg.env_name,
                                                             archive_df=train_archive[0],
-                                                            ldm=model,
+                                                            ldm=reconstruction_model,
                                                             autoencoder=autoencoder,
                                                             N=-1,
                                                             image_path = cfg.image_path,

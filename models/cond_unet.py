@@ -199,6 +199,9 @@ class ConditionalUNet(nn.Module):
 
         return self.out(x)
 
+def get_dtype_from_transformer(self):
+    return self.transformer.resblocks[0].mlp[0].weight.dtype
+
 class LangConditionalUNet(ConditionalUNet):
 
     # Clip naming convention is model_type-size/patch_size
@@ -207,22 +210,25 @@ class LangConditionalUNet(ConditionalUNet):
         model, preprocess_img = clip.load(clip_model_name)
         del preprocess_img
         self.clip_model = model
-        # May as well delete the visual transformer, since we're only using the text transformer
+        # We can't just remove the visual transformer since the clip model uses it to know its own dtype
         del self.clip_model.visual
+        setattr(type(self.clip_model), 'dtype', property(get_dtype_from_transformer))
         # We could patch the clip text projection instead, but why not stack more layers?
         d_cond: int = self.cond_embed[-1].weight.shape[1]
         self.clip_cond_projection = nn.Linear(self.clip_model.text_projection.shape[1],
                                               d_cond, bias=True)
 
     def text_to_cond(self, text: List[str]) -> torch.Tensor:
-        return self.clip_cond_projection(self.clip_model.encode_text(text))
+        tokenized = clip.tokenize(text).to(self.clip_cond_projection.weight.device)
+        encoded = self.clip_model.encode_text(tokenized).type(self.clip_cond_projection.weight.dtype)
+        return self.clip_cond_projection(encoded)
 
     def forward(self, x: torch.Tensor, time_steps: torch.Tensor, cond: Optional[torch.Tensor] = None, cond_text: Optional[List[str]] = None):
         x_input_block = []
         t_emb = self.time_embed(time_steps)
         if cond is None:
             assert cond_text is not None
-            cond = self.clip_cond_projection(self.clip_model.encode_text(cond_text))
+            cond = self.text_to_cond(cond_text)
         cond = cond[:, None, :]
 
         for module in self.input_blocks:
