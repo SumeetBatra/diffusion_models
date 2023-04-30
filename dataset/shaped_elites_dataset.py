@@ -66,6 +66,7 @@ class ShapedEliteDataset(Dataset):
             # indices shall be eval_batch_size number of indices spaced out (by objective) evenly across the elites_list
             indices = np.linspace(0, len(elites_list) - 1, eval_batch_size, dtype=int)
             indices = np.argsort(archive_df['objective'].to_numpy())[indices]
+            self.indices = indices
             elites_list = elites_list[indices]
             self.measures_list = self.measures_list[indices]
             self.metadata = self.metadata[indices]
@@ -124,6 +125,8 @@ class LangShapedEliteDataset(ShapedEliteDataset):
     def __init__(self, *args, text_labels: List[str], **kwargs):
         super().__init__(*args, **kwargs)
         self.text_labels = text_labels
+        if self.is_eval:
+            self.text_labels = [self.text_labels[i] for i in self.indices]
 
     def __getitem__(self, item):
         weights_dict, measures = super().__getitem__(item)
