@@ -65,7 +65,7 @@ def parse_args():
     parser.add_argument('--reevaluate_archive_vae', type=lambda x: bool(strtobool(x)), default=True, help='Evaluate the VAE on the entire archive every 50 epochs')
     parser.add_argument('--load_from_checkpoint', type=str, default=None, help='Load an existing model from a checkpoint for additional training')
     parser.add_argument('--center_data', type=lambda x: bool(strtobool(x)), default=True, help='Zero center the policy dataset with unit variance')
-    parser.add_argument('--clip_obs_rew', type=lambda x: bool(strtobool(x)), default=False, help='Clip obs and rewards b/w -10 and 10 in brax. Set to true if the PPGA archive trained with clipping enabled')
+    parser.add_argument('--clip_obs_rew', type=lambda x: bool(strtobool(x)), default=True, help='Clip obs and rewards b/w -10 and 10 in brax. Set to true if the PPGA archive trained with clipping enabled')
     parser.add_argument('--cut_out', type=lambda x: bool(strtobool(x)), default=False, help='cut out elites from the archive that have measure between [0.5,0.5] and [0.6,0.6]')
 
     args = parser.parse_args()
@@ -585,7 +585,16 @@ def train_autoencoder():
 
     # evaluate the final model on the entire archive
     print('Evaluating final model on entire archive...')
-    subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name, archive_df=train_archive[0], model=model, N=-1, image_path = args.image_path, suffix = "final", ignore_first=False)
+    subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name,
+                                                                archive_df=train_archive[0],
+                                                                model=model,
+                                                                N=-1,
+                                                                image_path = args.image_path,
+                                                                suffix = "final",
+                                                                ignore_first=False,
+                                                                normalize_obs=True,
+                                                                clip_obs_rew=args.clip_obs_rew,
+                                                                **dataset_kwargs)    
     log.debug(f"Final Reconstruction Results: {subsample_results['Reconstructed']}")
     log.debug(f"Original Archive Reevaluated Results: {subsample_results['Original']}")
 
