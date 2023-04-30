@@ -587,6 +587,7 @@ def train_autoencoder():
     if args.use_wandb:
         wandb.log({'Archive/recon_image_final': wandb.Image(image_results['Reconstructed'], caption=f"Final")})
         wandb.log({'Archive/original_image': wandb.Image(image_results['Original'], caption=f"Final")})
+        wandb.log({'Archive/' + key : val for key, val in subsample_results['Original'].items()})
 
 
 if __name__ == '__main__':

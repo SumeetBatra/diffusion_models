@@ -242,7 +242,6 @@ def train(cfg):
         sampler = DDIMSampler(gauss_diff, n_steps=100)
 
     epochs = cfg.num_epochs
-    scale_factor = 1.0
     global_step = 0
     for epoch in range(epochs + 1):
         if cfg.track_agent_quality and epoch % 5 == 0:
