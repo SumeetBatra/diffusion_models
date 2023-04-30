@@ -482,6 +482,7 @@ def train_autoencoder():
                                                                               suffix = str(epoch),
                                                                               ignore_first=True,
                                                                               normalize_obs=True,
+                                                                              cut_out=args.cut_out,
                                                                               clip_obs_rew=args.clip_obs_rew,
                                                                               **dataset_kwargs)
                     for key, val in subsample_results['Reconstructed'].items():
@@ -593,6 +594,7 @@ def train_autoencoder():
                                                                 suffix = "final",
                                                                 ignore_first=False,
                                                                 normalize_obs=True,
+                                                                cut_out=False,
                                                                 clip_obs_rew=args.clip_obs_rew,
                                                                 **dataset_kwargs)    
     log.debug(f"Final Reconstruction Results: {subsample_results['Reconstructed']}")
@@ -603,6 +605,26 @@ def train_autoencoder():
         wandb.log({'Archive/original_image': wandb.Image(image_results['Original'], caption=f"Final")})
         wandb.log({'Archive/' + key : val for key, val in subsample_results['Original'].items()})
 
+    if args.cut_out:
+        print('Evaluating final model on entire archive with cutout...')
+        subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name,
+                                                                    archive_df=train_archive[0],
+                                                                    model=model,
+                                                                    N=-1,
+                                                                    image_path = args.image_path,
+                                                                    suffix = "final_cutout",
+                                                                    ignore_first=False,
+                                                                    normalize_obs=True,
+                                                                    cut_out=True,
+                                                                    clip_obs_rew=args.clip_obs_rew,
+                                                                    **dataset_kwargs)    
+        log.debug(f"Final Reconstruction Results with cutout: {subsample_results['Reconstructed']}")
+        log.debug(f"Original Archive Reevaluated Results with cutout: {subsample_results['Original']}")
+
+        if args.use_wandb:
+            wandb.log({'Archive/recon_image_final_cutout': wandb.Image(image_results['Reconstructed'], caption=f"Final Cutout")})
+            wandb.log({'Archive/original_image_cutout': wandb.Image(image_results['Original'], caption=f"Final Cutout")})
+            wandb.log({'Archive/' + key + '_cutout' : val for key, val in subsample_results['Original'].items()})
 
 if __name__ == '__main__':
     train_autoencoder()

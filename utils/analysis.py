@@ -27,7 +27,8 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
                             suffix: str = None, ignore_first: bool = False, clip_obs_rew: bool = False,
                             normalize_obs: bool = False,
                             center_data: bool = False,
-                            weight_normalizer = None,):
+                            weight_normalizer = None,
+                            cut_out: bool = False,):
 
     '''Randomly sample N elites from the archive. Evaluate the original elites and the reconstructed elites
     from the VAE. Compare the performance using a subsampled QD-Score. Compare the behavior accuracy using the l2 norm
@@ -59,6 +60,12 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
 
     if N != -1:
         archive_df = archive_df.sample(N)
+    
+    if cut_out:
+        # ignore the elites that are in the middle of the archive
+        archive_df = archive_df[
+            ~((archive_df['measure_0'] > 0.5) & (archive_df['measure_1'] > 0.5) 
+              & (archive_df['measure_0'] < 0.6) & (archive_df['measure_1'] < 0.6))]
 
     soln_dim = archive_df.filter(regex='solution*').to_numpy().shape[1]
     archive_dims = [env_cfg['grid_size']] * env_cfg['num_dims']
@@ -127,7 +134,8 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
                             uniform_sampling: bool = False,
                             center_data: bool = False,
                             latent_shape = None,
-                            weight_normalizer = None):
+                            weight_normalizer = None,
+                            cut_out: bool = False,):
     if type(archive_df) == str:
         with open(archive_df, 'rb') as f:
             archive_df = pickle.load(f)
@@ -141,6 +149,13 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
 
     if N != -1:
         archive_df = archive_df.sample(N)
+
+    if cut_out:
+        # ignore the elites that are in the middle of the archive
+        archive_df = archive_df[
+            ~((archive_df['measure_0'] > 0.5) & (archive_df['measure_1'] > 0.5) 
+              & (archive_df['measure_0'] < 0.6) & (archive_df['measure_1'] < 0.6))]
+
 
     soln_dim = archive_df.filter(regex='solution*').to_numpy().shape[1]
     archive_dims = [env_cfg['grid_size']] * env_cfg['num_dims']

@@ -293,6 +293,7 @@ def train(cfg):
                                                                             normalize_obs=True,
                                                                             clip_obs_rew=cfg.clip_obs_rew,
                                                                             uniform_sampling = False,
+                                                                            cut_out=cfg.cut_out,
                                                                             latent_shape = (cfg.z_channels, cfg.z_height, cfg.z_height),
                                                                             **dataset_kwargs)
                     uniform_subsample_results, uniform_image_results = evaluate_ldm_subsample(env_name=cfg.env_name,
@@ -308,6 +309,7 @@ def train(cfg):
                                                                             normalize_obs=True,
                                                                             clip_obs_rew=cfg.clip_obs_rew,
                                                                             uniform_sampling = True,
+                                                                            cut_out=cfg.cut_out,
                                                                             latent_shape = (cfg.z_channels, cfg.z_height, cfg.z_height),
                                                                             **dataset_kwargs)
                     for key, val in subsample_results['Reconstructed'].items():
@@ -409,6 +411,9 @@ def train(cfg):
                                                             scale_factor=scale_factor,
                                                             normalize_obs=True,
                                                             clip_obs_rew=cfg.clip_obs_rew,
+                                                            uniform_sampling = False,
+                                                            cut_out=cfg.cut_out,
+                                                            latent_shape = (cfg.z_channels, cfg.z_height, cfg.z_height),
                                                             **dataset_kwargs)
     log.debug(f"Final Reconstruction Results: {subsample_results['Reconstructed']}")
     log.debug(f"Original Archive Reevaluated Results: {subsample_results['Original']}")
