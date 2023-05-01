@@ -32,7 +32,7 @@ def save_heatmap(archive, heatmap_path, emitter_loc: Optional[tuple[float, ...]]
     """
     if isinstance(archive, GridArchive):
         plt.figure(figsize=(8, 6))
-        grid_archive_heatmap(archive, emitter_loc=emitter_loc, forces=forces)
+        grid_archive_heatmap(archive, emitter_loc=emitter_loc, forces=forces, cmap='viridis')
         plt.tight_layout()
         plt.savefig(heatmap_path)
     elif isinstance(archive, CVTArchive):
