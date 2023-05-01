@@ -191,7 +191,7 @@ def train(cfg):
 
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
-    train_batch_size, test_batch_size = 32, 8
+    train_batch_size, test_batch_size = 32, 50
     train_dataloader, train_archive, weight_normalizer = shaped_elites_dataset_factory(
         cfg.env_name, batch_size=train_batch_size, is_eval=False,
         center_data=cfg.center_data,
