@@ -2,6 +2,7 @@
 __pycache__/
 checkpoints/
 results/
+paper_results/
 wandb/
 data*/
 .vscode
