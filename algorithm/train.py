@@ -97,8 +97,11 @@ def estimate_component_wise_variance(batch):
 def train(cfg):
     exp_name = cfg.env_name + '_diffusion_model_' + datetime.now().strftime("%Y%m%d-%H%M%S")
 
-    results_folder = Path("./results")
+    results_folder = Path(cfg.output_dir)
     results_folder.mkdir(exist_ok=True)
+
+    # appending seed to name
+    exp_name += '_' + str(cfg.seed)
 
     # add experiment name to args
     cfg.exp_name = exp_name
