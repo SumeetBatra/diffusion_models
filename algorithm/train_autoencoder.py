@@ -76,7 +76,8 @@ def parse_args():
 def grad_norm(model):
     sqsum = 0.0
     for p in model.parameters():
-        sqsum += (p.grad ** 2).sum().item()
+        if p.grad is not None:
+            sqsum += (p.grad ** 2).sum().item()
     return np.sqrt(sqsum)
 
 
@@ -207,7 +208,7 @@ def shaped_elites_dataset_factory(env_name,
                 ln_before_cut = len(archive_df)
                 # ignore the elites that are in the middle of the archive
                 archive_df = archive_df[
-                    ~((archive_df['measure_0'] > 0.2) & (archive_df['measure_1'] > 0.2) 
+                    ~((archive_df['measure_0'] > 0.2) & (archive_df['measure_1'] > 0.2)
                     & (archive_df['measure_0'] < 0.6) & (archive_df['measure_1'] < 0.6))]
                 print(f'Cut out {ln_before_cut - len(archive_df)} elites')
 
@@ -607,7 +608,7 @@ def train_autoencoder():
                                                                 normalize_obs=True,
                                                                 average=args.average_elites,
                                                                 clip_obs_rew=args.clip_obs_rew,
-                                                                **dataset_kwargs)    
+                                                                **dataset_kwargs)
     log.debug(f"Final Reconstruction Results: {subsample_results['Reconstructed']}")
     log.debug(f"Original Archive Reevaluated Results: {subsample_results['Original']}")
 

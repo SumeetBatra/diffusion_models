@@ -4,7 +4,11 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
+# pip install ftfy regex tqdm
+# pip install git+https://github.com/openai/CLIP.git
 import clip
+# pip install transformers accelerate sentencepiece
+from transformers import T5Tokenizer, T5EncoderModel
 
 from models.attention import SpatialTransformer
 from models.unet import SinusoidalPositionEmbeddings
@@ -205,23 +209,38 @@ def get_dtype_from_transformer(self):
 class LangConditionalUNet(ConditionalUNet):
 
     # Clip naming convention is model_type-size/patch_size
-    def __init__(self, *args, clip_model_name: str = "ViT-B/16", **kwargs):
+    def __init__(self, *args, language_model: str = 'clip', **kwargs):
         super().__init__(*args, **kwargs)
-        model, preprocess_img = clip.load(clip_model_name, jit=False)
-        del preprocess_img
-        self.clip_model = model.float()
-        # We can't just remove the visual transformer since the clip model uses it to know its own dtype
-        del self.clip_model.visual
-        setattr(type(self.clip_model), 'dtype', property(get_dtype_from_transformer))
-        # We could patch the clip text projection instead, but why not stack more layers?
-        d_cond: int = self.cond_embed[-1].weight.shape[1]
-        self.clip_cond_projection = nn.Linear(self.clip_model.text_projection.shape[1],
-                                              d_cond, bias=True)
+        self.language_model = language_model.lower()
+        self.d_cond: int = self.cond_embed[-1].weight.shape[1]
+        if self.language_model == 'clip':
+            model, preprocess_img = clip.load("ViT-B/16", jit=False)
+            del preprocess_img
+            self.clip_model = model.float()
+            # We can't just remove the visual transformer since the clip model uses it to know its own dtype
+            del self.clip_model.visual
+            setattr(type(self.clip_model), 'dtype', property(get_dtype_from_transformer))
+            # We could patch the clip text projection instead, but why not stack more layers?
+            # The clip encoder just uses the last latent state of the last token, so we can include a bias term here.
+            self.clip_cond_projection = nn.Linear(self.clip_model.text_projection.shape[1],
+                                                  self.d_cond, bias=True)
+        elif self.language_model == 'flan-t5-small':
+            self.t5_tokenizer = T5Tokenizer.from_pretrained("google/flan-t5-small")
+            self.t5_model = T5EncoderModel.from_pretrained("google/flan-t5-small", device_map="auto")
+            # We're going to sum across the token dim (which varies based on label length), so don't use a bias.
+            self.t5_hidden_projection = nn.Linear(self.t5_model.config.d_model, self.d_cond, bias=False)
 
     def text_to_cond(self, text: List[str]) -> torch.Tensor:
-        tokenized = clip.tokenize(text).to(self.clip_cond_projection.weight.device)
-        encoded = self.clip_model.encode_text(tokenized)
-        return self.clip_cond_projection(encoded)
+        if self.language_model == 'clip':
+            tokenized = clip.tokenize(text).to(self.clip_cond_projection.weight.device)
+            encoded = self.clip_model.encode_text(tokenized)
+            return self.clip_cond_projection(encoded)
+        elif self.language_model == 'flan-t5-small':
+            tokenized = self.t5_tokenizer(text, return_tensors="pt", padding=True).input_ids.to(self.t5_hidden_projection.weight.device)
+            hidden_states = self.t5_model(input_ids=tokenized).last_hidden_state
+            projected = self.t5_hidden_projection(hidden_states)
+            # Sum across token dimension (the projection will learn to sum the hidden states)
+            return projected.sum(dim=-2)
 
     def forward(self, x: torch.Tensor, time_steps: torch.Tensor, cond: Optional[torch.Tensor] = None, cond_text: Optional[List[str]] = None):
         x_input_block = []
