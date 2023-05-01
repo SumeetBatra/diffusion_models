@@ -208,7 +208,7 @@ def shaped_elites_dataset_factory(env_name,
                 # ignore the elites that are in the middle of the archive
                 archive_df = archive_df[
                     ~((archive_df['measure_0'] > 0.2) & (archive_df['measure_1'] > 0.2) 
-                    & (archive_df['measure_0'] < 0.4) & (archive_df['measure_1'] < 0.4))]
+                    & (archive_df['measure_0'] < 0.6) & (archive_df['measure_1'] < 0.6))]
                 print(f'Cut out {ln_before_cut - len(archive_df)} elites')
 
             archive_dfs.append(archive_df)
