@@ -443,6 +443,11 @@ def train_autoencoder():
     for epoch in range(epochs + 1):
 
         if args.track_agent_quality and epoch % 10 == 0:
+            # save the model
+            model_name = f'{exp_name}.pt'
+            torch.save(model.state_dict(), os.path.join(str(args.model_checkpoint_folder), model_name))
+
+
             with torch.no_grad():
                 # get a ground truth policy and evaluate it. Then get the reconstructed policy and compare its
                 # performance and behavior to the ground truth

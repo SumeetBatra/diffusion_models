@@ -11,14 +11,9 @@ eval "$(conda shell.bash hook)"
 conda activate qd
 
 
-# z=4
-# z=8
-z=16
-
-# kc=1e-4
-# kc=1e-8
 
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
+seed=123
 
-srun -c12 python -m algorithm.train_autoencoder --env_name humanoid --use_wandb True --num_epochs 500 --wandb_group test --ghn_hid 64 --seed 456 --wandb_run_name vae_run_hmn_common_enc_heatmap --z_channels $z --z_height $z --emb_channels $z --use_perceptual_loss 0 --reevaluate_archive_vae True 
+srun -c12 python -m algorithm.train_autoencoder --env_name humanoid --use_wandb True --wandb_tag final --wandb_group final --seed $seed --wandb_run_name humanoid_centering --output_dir paper_results --num_epochs 500
