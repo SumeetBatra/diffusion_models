@@ -325,6 +325,9 @@ def train_autoencoder():
     if args.conditional:
         exp_name = 'conditional_' + exp_name
 
+    # appending seed to name
+    exp_name += '_' + str(args.seed)
+
     # add experiment name to args
     args.exp_name = exp_name
     exp_dir = os.path.join(args.output_dir, args.env_name)

@@ -97,8 +97,11 @@ def estimate_component_wise_variance(batch):
 def train(cfg):
     exp_name = cfg.env_name + '_diffusion_model_' + datetime.now().strftime("%Y%m%d-%H%M%S")
 
-    results_folder = Path("./results")
+    results_folder = Path(cfg.output_dir)
     results_folder.mkdir(exist_ok=True)
+
+    # appending seed to name
+    exp_name += '_' + str(cfg.seed)
 
     # add experiment name to args
     cfg.exp_name = exp_name
@@ -246,6 +249,9 @@ def train(cfg):
     global_step = 0
     for epoch in range(epochs + 1):
         if cfg.track_agent_quality and epoch % 5 == 0:
+            model_name = f'{exp_name}.pt'
+            torch.save(model.state_dict(), os.path.join(str(cfg.model_checkpoint_folder), model_name))
+            
             with torch.no_grad():
                 # get latents from the LDM using the DDIM sampler. Then use the VAE decoder
                 # to get the policies and evaluate their quality
@@ -295,6 +301,7 @@ def train(cfg):
                                                                             clip_obs_rew=cfg.clip_obs_rew,
                                                                             uniform_sampling = False,
                                                                             cut_out=cfg.cut_out,
+                                                                            average=cfg.average_elites,
                                                                             latent_shape = (cfg.z_channels, cfg.z_height, cfg.z_height),
                                                                             **dataset_kwargs)
                     uniform_subsample_results, uniform_image_results = evaluate_ldm_subsample(env_name=cfg.env_name,
@@ -311,6 +318,7 @@ def train(cfg):
                                                                             clip_obs_rew=cfg.clip_obs_rew,
                                                                             uniform_sampling = True,
                                                                             cut_out=cfg.cut_out,
+                                                                            average=cfg.average_elites,
                                                                             latent_shape = (cfg.z_channels, cfg.z_height, cfg.z_height),
                                                                             **dataset_kwargs)
                     for key, val in subsample_results['Reconstructed'].items():
@@ -389,8 +397,10 @@ def train(cfg):
             })
 
     print('Saving final model checkpoint...')
-    cp_name = f'diffusion_model_{cfg.env_name}_{datetime.now().strftime("%Y%m%d-%H%M")}.pt'
-    torch.save(model.state_dict(), os.path.join(str(cfg.model_checkpoint_folder), cp_name))
+    # cp_name = f'diffusion_model_{cfg.env_name}_{datetime.now().strftime("%Y%m%d-%H%M")}.pt'
+    # torch.save(model.state_dict(), os.path.join(str(cfg.model_checkpoint_folder), cp_name))
+    model_name = f'{exp_name}.pt'
+    torch.save(model.state_dict(), os.path.join(str(cfg.model_checkpoint_folder), model_name))
 
     reconstruction_model = model
     if cfg.use_language:
@@ -422,7 +432,7 @@ def train(cfg):
         wandb.log({'Archive/recon_image_final': wandb.Image(image_results['Reconstructed'], caption=f"Final")})
         wandb.log({'Archive/original_image': wandb.Image(image_results['Original'], caption=f"Final")})
 
-        wandb.log({'Archive/' + key : val for key, val in subsample_results['Original'].items()})
+        wandb.log({'Archive/original_' + key : val for key, val in subsample_results['Original'].items()})
 
 
 if __name__ == '__main__':

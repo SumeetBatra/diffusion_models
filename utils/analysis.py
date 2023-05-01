@@ -169,7 +169,7 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
                                                                normalize_obs,
                                                                normalize_returns,
                                                                original_archive,
-                                                               averge=average)
+                                                               average=average)
         original_results = {
             'Coverage': original_reevaluated_archive.stats.coverage,
             'Max_fitness': original_reevaluated_archive.stats.obj_max,
@@ -191,7 +191,7 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
                                                               uniform_sampling=uniform_sampling,
                                                               weight_normalizer=weight_normalizer,
                                                               latent_shape = latent_shape,
-                                                              averge=average,
+                                                              average=average,
                                                               )
     reconstructed_results = {
         'Coverage': reconstructed_evaluated_archive.stats.coverage,
