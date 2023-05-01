@@ -207,9 +207,9 @@ class LangConditionalUNet(ConditionalUNet):
     # Clip naming convention is model_type-size/patch_size
     def __init__(self, *args, clip_model_name: str = "ViT-B/16", **kwargs):
         super().__init__(*args, **kwargs)
-        model, preprocess_img = clip.load(clip_model_name)
+        model, preprocess_img = clip.load(clip_model_name, jit=False)
         del preprocess_img
-        self.clip_model = model
+        self.clip_model = model.float()
         # We can't just remove the visual transformer since the clip model uses it to know its own dtype
         del self.clip_model.visual
         setattr(type(self.clip_model), 'dtype', property(get_dtype_from_transformer))
@@ -220,7 +220,7 @@ class LangConditionalUNet(ConditionalUNet):
 
     def text_to_cond(self, text: List[str]) -> torch.Tensor:
         tokenized = clip.tokenize(text).to(self.clip_cond_projection.weight.device)
-        encoded = self.clip_model.encode_text(tokenized).type(self.clip_cond_projection.weight.dtype)
+        encoded = self.clip_model.encode_text(tokenized)
         return self.clip_cond_projection(encoded)
 
     def forward(self, x: torch.Tensor, time_steps: torch.Tensor, cond: Optional[torch.Tensor] = None, cond_text: Optional[List[str]] = None):

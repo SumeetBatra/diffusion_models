@@ -352,8 +352,7 @@ def train(cfg):
             t = torch.randint(0, timesteps, (batch_size,), device=device).long()
 
             if cfg.use_language:
-                with torch.no_grad():
-                    cond = model.text_to_cond(text_labels)
+                cond = model.text_to_cond(text_labels)
             else:
                 cond = measures
             losses, loss_dict, info_dict = gauss_diff.compute_training_losses(model, batch, t, model_kwargs={'cond': cond})
