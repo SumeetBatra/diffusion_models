@@ -63,7 +63,7 @@ def load_archive(archive_path):
     return archive
 
 
-def evaluate(vec_agent, vec_env, num_dims, use_action_means=True, normalize_obs=False):
+def evaluate(vec_agent, vec_env, num_dims, use_action_means=True, normalize_obs=False, average = False):
     '''
     Evaluate all agents for one episode
     :param vec_agent: Vectorized agents for vectorized inference
@@ -110,17 +110,22 @@ def evaluate(vec_agent, vec_env, num_dims, use_action_means=True, normalize_obs=
 
     # the first done in each env is where that trajectory ends
     traj_lengths = torch.argmax(all_dones, dim=0) + 1
-    # avg_traj_lengths = traj_lengths.to(torch.float32).reshape(
-        # (vec_agent.num_models, vec_env.num_envs // vec_agent.num_models)).mean(dim=1).cpu().numpy()
-    avg_traj_lengths = traj_lengths.to(torch.float32).cpu().numpy()
+    if average:
+        avg_traj_lengths = traj_lengths.to(torch.float32).reshape(
+            (vec_agent.num_models, vec_env.num_envs // vec_agent.num_models)).mean(dim=1).cpu().numpy()
+    else:
+        avg_traj_lengths = traj_lengths.to(torch.float32).cpu().numpy()
     # TODO: figure out how to vectorize this
     for i in range(vec_env.num_envs):
         measures[i] = measures_acc[:traj_lengths[i], i].sum(dim=0) / traj_lengths[i]
-    # measures = measures.reshape(vec_agent.num_models, vec_env.num_envs // vec_agent.num_models, -1).mean(dim=1)
+    
+    if average:
+        measures = measures.reshape(vec_agent.num_models, vec_env.num_envs // vec_agent.num_models, -1).mean(dim=1)
 
     metadata = np.array([{'traj_length': t} for t in avg_traj_lengths])
-    # total_reward = total_reward.reshape((vec_agent.num_models, vec_env.num_envs // vec_agent.num_models))
-    # total_reward = total_reward.mean(axis=1)
+    if average:
+        total_reward = total_reward.reshape((vec_agent.num_models, vec_env.num_envs // vec_agent.num_models))
+        total_reward = total_reward.mean(axis=1)
     return total_reward.reshape(-1, ), measures.reshape(-1, num_dims).detach().cpu().numpy(), metadata
 
 
@@ -212,10 +217,12 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                             weight_normalizer = None,
                             uniform_sampling = False,
                             latent_shape = None,
+                            average = False,
                             ):
     num_sols = len(original_archive)
     print(f'{num_sols=}')
-    env_cfg.env_batch_size = 50 * solution_batch_size
+    envs_per_agent = 50
+    env_cfg.env_batch_size = envs_per_agent * solution_batch_size
     vec_env = make_vec_env_brax(env_cfg)
 
     obs_shape, action_shape = vec_env.single_observation_space.shape, vec_env.single_action_space.shape
@@ -267,13 +274,13 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
 
         if env_cfg.env_batch_size % len(agent_batch) != 0 and len(original_archive) % solution_batch_size != 0:
             del vec_env
-            env_cfg.env_batch_size = len(agent_batch) * 50
+            env_cfg.env_batch_size = len(agent_batch) * envs_per_agent
             vec_env = make_vec_env_brax(env_cfg)
         print(f'Evaluating solution batch {i}')
         vec_inference = VectorizedActor(agent_batch, Actor, obs_shape=obs_shape, action_shape=action_shape,
                                         normalize_obs=normalize_obs, normalize_returns=normalize_returns,
                                         deterministic=True).to(device)
-        objs, measures, metadata = evaluate(vec_inference, vec_env, env_cfg.num_dims, normalize_obs=normalize_obs)
+        objs, measures, metadata = evaluate(vec_inference, vec_env, env_cfg.num_dims, normalize_obs=normalize_obs, average=average)
         all_objs.append(objs)
         all_measures.append(measures)
         all_metadata.append(metadata)

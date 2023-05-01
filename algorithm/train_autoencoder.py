@@ -17,7 +17,7 @@ from envs.brax_custom.brax_env import make_vec_env_brax
 from attrdict import AttrDict
 from utils.brax_utils import shared_params, rollout_many_agents, calculate_statistics
 from utils.utilities import log, config_wandb
-from utils.archive_utils import archive_df_to_archive
+from utils.archive_utils import archive_df_to_archive, evaluate
 from losses.contperceptual import LPIPS
 from utils.analysis import evaluate_vae_subsample
 from utils.tensor_dict import TensorDict, cat_tensordicts
@@ -67,6 +67,7 @@ def parse_args():
     parser.add_argument('--center_data', type=lambda x: bool(strtobool(x)), default=True, help='Zero center the policy dataset with unit variance')
     parser.add_argument('--clip_obs_rew', type=lambda x: bool(strtobool(x)), default=True, help='Clip obs and rewards b/w -10 and 10 in brax. Set to true if the PPGA archive trained with clipping enabled')
     parser.add_argument('--cut_out', type=lambda x: bool(strtobool(x)), default=False, help='cut out elites from the archive that have measure between [0.5,0.5] and [0.6,0.6]')
+    parser.add_argument('--average_elites', type=lambda x: bool(strtobool(x)), default=False, help='Average the elites in the archive to get a single elite for each measure, advised to do it for cut_out=True')
 
     args = parser.parse_args()
     return args
@@ -200,6 +201,16 @@ def shaped_elites_dataset_factory(env_name,
         with open(path, 'rb') as f:
             log.info(f'Loading archive at {path}')
             archive_df = pickle.load(f)
+
+            if cut_out:
+                print('Cutting out the middle of the archive')
+                ln_before_cut = len(archive_df)
+                # ignore the elites that are in the middle of the archive
+                archive_df = archive_df[
+                    ~((archive_df['measure_0'] > 0.2) & (archive_df['measure_1'] > 0.2) 
+                    & (archive_df['measure_0'] < 0.4) & (archive_df['measure_1'] < 0.4))]
+                print(f'Cut out {ln_before_cut - len(archive_df)} elites')
+
             archive_dfs.append(archive_df)
 
     if use_language:
@@ -482,7 +493,7 @@ def train_autoencoder():
                                                                               suffix = str(epoch),
                                                                               ignore_first=True,
                                                                               normalize_obs=True,
-                                                                              cut_out=args.cut_out,
+                                                                              average=args.average_elites,
                                                                               clip_obs_rew=args.clip_obs_rew,
                                                                               **dataset_kwargs)
                     for key, val in subsample_results['Reconstructed'].items():
@@ -594,7 +605,7 @@ def train_autoencoder():
                                                                 suffix = "final",
                                                                 ignore_first=False,
                                                                 normalize_obs=True,
-                                                                cut_out=False,
+                                                                average=args.average_elites,
                                                                 clip_obs_rew=args.clip_obs_rew,
                                                                 **dataset_kwargs)    
     log.debug(f"Final Reconstruction Results: {subsample_results['Reconstructed']}")
@@ -604,27 +615,6 @@ def train_autoencoder():
         wandb.log({'Archive/recon_image_final': wandb.Image(image_results['Reconstructed'], caption=f"Final")})
         wandb.log({'Archive/original_image': wandb.Image(image_results['Original'], caption=f"Final")})
         wandb.log({'Archive/' + key : val for key, val in subsample_results['Original'].items()})
-
-    if args.cut_out:
-        print('Evaluating final model on entire archive with cutout...')
-        subsample_results, image_results = evaluate_vae_subsample(env_name=args.env_name,
-                                                                    archive_df=train_archive[0],
-                                                                    model=model,
-                                                                    N=-1,
-                                                                    image_path = args.image_path,
-                                                                    suffix = "final_cutout",
-                                                                    ignore_first=False,
-                                                                    normalize_obs=True,
-                                                                    cut_out=True,
-                                                                    clip_obs_rew=args.clip_obs_rew,
-                                                                    **dataset_kwargs)    
-        log.debug(f"Final Reconstruction Results with cutout: {subsample_results['Reconstructed']}")
-        log.debug(f"Original Archive Reevaluated Results with cutout: {subsample_results['Original']}")
-
-        if args.use_wandb:
-            wandb.log({'Archive/recon_image_final_cutout': wandb.Image(image_results['Reconstructed'], caption=f"Final Cutout")})
-            wandb.log({'Archive/original_image_cutout': wandb.Image(image_results['Original'], caption=f"Final Cutout")})
-            wandb.log({'Archive/' + key + '_cutout' : val for key, val in subsample_results['Original'].items()})
 
 if __name__ == '__main__':
     train_autoencoder()

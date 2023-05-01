@@ -68,6 +68,8 @@ def parse_args():
                         help='Clip obs and rewards b/w -10 and 10 in brax. Set to true if the PPGA archive trained with clipping enabled')
     parser.add_argument('--grad_clip', type=lambda x: bool(strtobool(x)), default=True,
                         help = 'Clip gradients during backprop')
+    parser.add_argument('--cut_out', type=lambda x: bool(strtobool(x)), default=False, help='cut out elites from the archive that have measure between [0.5,0.5] and [0.6,0.6]')
+    parser.add_argument('--average_elites', type=lambda x: bool(strtobool(x)), default=False, help='Average the elites in the archive to get a single elite for each measure, advised to do it for cut_out=True')
 
     parser.add_argument('--use_language', type=lambda x: bool(strtobool(x)), default=False)
 
@@ -189,7 +191,7 @@ def train(cfg):
 
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
-    train_batch_size, test_batch_size = 32, 50
+    train_batch_size, test_batch_size = 32, 8
     train_dataloader, train_archive, weight_normalizer = shaped_elites_dataset_factory(
         cfg.env_name, batch_size=train_batch_size, is_eval=False,
         center_data=cfg.center_data,

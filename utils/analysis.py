@@ -28,7 +28,8 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
                             normalize_obs: bool = False,
                             center_data: bool = False,
                             weight_normalizer = None,
-                            cut_out: bool = False,):
+                            cut_out: bool = False,
+                            average: bool = False,):
 
     '''Randomly sample N elites from the archive. Evaluate the original elites and the reconstructed elites
     from the VAE. Compare the performance using a subsampled QD-Score. Compare the behavior accuracy using the l2 norm
@@ -61,11 +62,9 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
     if N != -1:
         archive_df = archive_df.sample(N)
     
-    if cut_out:
-        # ignore the elites that are in the middle of the archive
-        archive_df = archive_df[
-            ~((archive_df['measure_0'] > 0.5) & (archive_df['measure_1'] > 0.5) 
-              & (archive_df['measure_0'] < 0.6) & (archive_df['measure_1'] < 0.6))]
+    if image_path is not None:
+        if not os.path.exists(image_path):
+            os.makedirs(image_path)
 
     soln_dim = archive_df.filter(regex='solution*').to_numpy().shape[1]
     archive_dims = [env_cfg['grid_size']] * env_cfg['num_dims']
@@ -82,7 +81,8 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
         original_reevaluated_archive = reevaluate_ppga_archive(env_cfg,
                                                                normalize_obs,
                                                                normalize_returns,
-                                                               original_archive)
+                                                               original_archive,
+                                                               average=average)
         print('Re-evaluated Original Archive')
         original_results = {
             'Coverage': original_reevaluated_archive.stats.coverage,
@@ -90,6 +90,9 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
             'Avg_Fitness': original_reevaluated_archive.stats.obj_mean,
             'QD_Score': original_reevaluated_archive.offset_qd_score
         }
+        if image_path is not None:
+            orig_image_array = save_heatmap(original_reevaluated_archive,
+                                            os.path.join(image_path, f"original_archive_{suffix}.png"))
 
     reconstructed_evaluated_archive = reevaluate_ppga_archive(env_cfg,
                                                               normalize_obs,
@@ -98,7 +101,8 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
                                                               reconstructed_agents=True,
                                                               vae=vae,
                                                               center_data=center_data,
-                                                              weight_normalizer=weight_normalizer,)
+                                                              weight_normalizer=weight_normalizer,
+                                                              average=average)
     print('Re-evaluated Reconstructed Archive')
     reconstructed_results = {
         'Coverage': reconstructed_evaluated_archive.stats.coverage,
@@ -112,13 +116,8 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
     }
 
     if image_path is not None:
-        if not os.path.exists(image_path):
-            os.makedirs(image_path)
-        if not ignore_first:
-            orig_image_array = save_heatmap(original_reevaluated_archive,
-                                            os.path.join(image_path, f"original_archive_{suffix}.png"))
         recon_image_array = save_heatmap(reconstructed_evaluated_archive,
-                                         os.path.join(image_path, f"reconstructed_archive_{suffix}.png"))
+                                        os.path.join(image_path, f"reconstructed_archive_{suffix}.png"))
 
     image_results = {
         'Original': orig_image_array if not ignore_first else None,
@@ -135,7 +134,8 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
                             center_data: bool = False,
                             latent_shape = None,
                             weight_normalizer = None,
-                            cut_out: bool = False,):
+                            cut_out: bool = False,
+                            average: bool = False,):
     if type(archive_df) == str:
         with open(archive_df, 'rb') as f:
             archive_df = pickle.load(f)
@@ -149,12 +149,6 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
 
     if N != -1:
         archive_df = archive_df.sample(N)
-
-    if cut_out:
-        # ignore the elites that are in the middle of the archive
-        archive_df = archive_df[
-            ~((archive_df['measure_0'] > 0.5) & (archive_df['measure_1'] > 0.5) 
-              & (archive_df['measure_0'] < 0.6) & (archive_df['measure_1'] < 0.6))]
 
 
     soln_dim = archive_df.filter(regex='solution*').to_numpy().shape[1]
@@ -174,7 +168,8 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
         original_reevaluated_archive = reevaluate_ppga_archive(env_cfg,
                                                                normalize_obs,
                                                                normalize_returns,
-                                                               original_archive)
+                                                               original_archive,
+                                                               averge=average)
         original_results = {
             'Coverage': original_reevaluated_archive.stats.coverage,
             'Max_fitness': original_reevaluated_archive.stats.obj_max,
@@ -196,6 +191,7 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
                                                               uniform_sampling=uniform_sampling,
                                                               weight_normalizer=weight_normalizer,
                                                               latent_shape = latent_shape,
+                                                              averge=average,
                                                               )
     reconstructed_results = {
         'Coverage': reconstructed_evaluated_archive.stats.coverage,
