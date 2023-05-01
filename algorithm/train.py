@@ -72,6 +72,7 @@ def parse_args():
     parser.add_argument('--average_elites', type=lambda x: bool(strtobool(x)), default=False, help='Average the elites in the archive to get a single elite for each measure, advised to do it for cut_out=True')
 
     parser.add_argument('--use_language', type=lambda x: bool(strtobool(x)), default=False)
+    parser.add_argument('--language_model', type=str, default='clip', help='Language model to use for language conditioned diffusion')
 
     args = parser.parse_args()
     cfg = AttrDict(vars(args))
@@ -82,11 +83,8 @@ def parse_args():
 def grad_norm(model):
     sqsum = 0.0
     for p in model.parameters():
-        if p.grad is None:
-            p_grad = torch.tensor(0)
-        else:
-            p_grad = p.grad
-        sqsum += (p_grad ** 2).sum().item()
+        if p.grad is not None:
+            sqsum += (p.grad ** 2).sum().item()
     return np.sqrt(sqsum)
 
 
@@ -154,7 +152,8 @@ def train(cfg):
             channel_multipliers=[1, 2, 4],
             n_heads=4,
             d_cond=256,
-            logvar=logvar
+            logvar=logvar,
+            language_model=cfg.language_model,
         )
     else:
         model = ConditionalUNet(
@@ -352,8 +351,7 @@ def train(cfg):
             t = torch.randint(0, timesteps, (batch_size,), device=device).long()
 
             if cfg.use_language:
-                with torch.no_grad():
-                    cond = model.text_to_cond(text_labels)
+                cond = model.text_to_cond(text_labels)
             else:
                 cond = measures
             losses, loss_dict, info_dict = gauss_diff.compute_training_losses(model, batch, t, model_kwargs={'cond': cond})
