@@ -345,6 +345,8 @@ def train_autoencoder():
     args.image_path = os.path.join(vae_dir, 'images')
     os.makedirs(args.image_path, exist_ok=True)
 
+    weight_normalizer_savepath = os.path.join(exp_dir, 'weight_normalizer.pkl')
+
     # add args to exp_dir
     with open(os.path.join(vae_dir, 'args.json'), 'w') as f:
         json.dump(vars(args), f, indent=4)
@@ -412,17 +414,28 @@ def train_autoencoder():
     mse_loss_func = mse_loss_from_weights_dict
 
     train_batch_size, test_batch_size = 32, 50
+
+    weight_normalizer = None
+    if os.path.exists(weight_normalizer_savepath) and args.center_data:
+        log.info(f'Loading existing weight normalizer saved at {weight_normalizer_savepath}')
+        weight_normalizer = WeightNormalizer(TensorDict({}), TensorDict({}))
+        weight_normalizer.load(weight_normalizer_savepath)
+
     dataloader, train_archive, weight_normalizer = shaped_elites_dataset_factory(args.env_name,
                                                                                  batch_size=train_batch_size,
                                                                                  is_eval=False,
                                                                                  center_data=args.center_data,
-                                                                                 cut_out=args.cut_out)
+                                                                                 cut_out=args.cut_out,
+                                                                                 weight_normalizer=weight_normalizer)
     test_dataloader, test_archive, *_ = shaped_elites_dataset_factory(args.env_name,
                                                                       batch_size=test_batch_size,
                                                                       is_eval=True,
                                                                       center_data=args.center_data,
                                                                       cut_out=args.cut_out,
                                                                       weight_normalizer=weight_normalizer)
+
+    if not os.path.exists(weight_normalizer_savepath) and args.center_data:
+        weight_normalizer.save(weight_normalizer_savepath)
 
     # log.debug(f'{weight_mean_dict=}, {weight_std_dict=}')
     dataset_kwargs = {

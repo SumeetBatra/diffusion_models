@@ -21,7 +21,7 @@ from models.unet import num_to_groups, Unet
 from models.cond_unet import ConditionalUNet, LangConditionalUNet
 from autoencoders.policy.hypernet import HypernetAutoEncoder as AutoEncoder
 from algorithm.train_autoencoder import evaluate_agent_quality, shaped_elites_dataset_factory
-from dataset.shaped_elites_dataset import ShapedEliteDataset
+from dataset.shaped_elites_dataset import ShapedEliteDataset, WeightNormalizer
 from diffusion.gaussian_diffusion import GaussianDiffusion, cosine_beta_schedule, linear_beta_schedule
 from diffusion.latent_diffusion import LatentDiffusion
 from diffusion.ddim import DDIMSampler
@@ -120,6 +120,8 @@ def train(cfg):
     cfg.image_path = os.path.join(dm_dir, 'images')
     os.makedirs(cfg.image_path, exist_ok=True)
 
+    weight_normalizer_savepath = os.path.join(exp_dir, 'weight_normalizer.pkl')
+
     # set seed
     random.seed(cfg.seed)
     np.random.seed(cfg.seed)
@@ -193,15 +195,25 @@ def train(cfg):
 
     optimizer = AdamW(model.parameters(), lr=1e-3)
 
+    weight_normalizer = None
+    if os.path.exists(weight_normalizer_savepath) and cfg.center_data:
+        log.info(f'Loading existing weight normalizer saved at {weight_normalizer_savepath}')
+        weight_normalizer = WeightNormalizer(TensorDict({}), TensorDict({}))
+        weight_normalizer.load(weight_normalizer_savepath)
+
     train_batch_size, test_batch_size = 32, 50
     train_dataloader, train_archive, weight_normalizer = shaped_elites_dataset_factory(
         cfg.env_name, batch_size=train_batch_size, is_eval=False,
         center_data=cfg.center_data,
-        use_language=cfg.use_language)
+        use_language=cfg.use_language,
+        weight_normalizer=weight_normalizer)
     test_dataloader, *_ = shaped_elites_dataset_factory(
         cfg.env_name, batch_size=test_batch_size, is_eval=True,
         center_data=cfg.center_data, weight_normalizer=weight_normalizer,
         use_language=cfg.use_language)
+
+    if not os.path.exists(weight_normalizer_savepath) and cfg.center_data:
+        weight_normalizer.save(weight_normalizer_savepath)
 
 
     dataset_kwargs = {
