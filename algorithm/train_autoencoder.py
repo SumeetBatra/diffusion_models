@@ -611,7 +611,7 @@ def train_autoencoder():
                 'Loss/kl_loss': epoch_kl_loss / len(dataloader),
                 'Loss/perceptual_loss': epoch_perceptual_loss / len(dataloader),
                 'Loss/norm_mse_loss': epoch_norm_mse_loss / len(dataloader),
-                'grad_norm': epoch_grad_norm / len(train_dataloader),
+                'grad_norm': epoch_grad_norm / len(dataloader),
                 'epoch': epoch + 1,
                 'global_step': global_step + 1
             })
