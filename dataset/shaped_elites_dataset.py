@@ -1,8 +1,7 @@
 import pickle
 import pandas
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import os
 import numpy as np
 
 from typing import List, Union, Optional
@@ -37,6 +36,20 @@ class WeightNormalizer:
             data[name] = param * (self.std_dict[name] + 1e-8) + self.means_dict[name]
 
         return data
+
+    def save(self, save_path: str):
+        data = {
+            'means_dict': dict(self.means_dict),
+            'std_dict': dict(self.std_dict)
+        }
+        with open(save_path, 'wb') as f:
+            pickle.dump(data, f)
+
+    def load(self, save_path: str):
+        with open(save_path, 'rb') as f:
+            data = pickle.load(f)
+        self.means_dict = TensorDict(data['means_dict'])
+        self.std_dict = TensorDict(data['std_dict'])
 
 
 class ShapedEliteDataset(Dataset):
