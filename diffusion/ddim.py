@@ -134,7 +134,3 @@ class DDIMSampler():
         return x_prev, pred_x0
 
 
-class CompositionalSampler(DDIMSampler):
-    def __init__(self, diffusion_model: GaussianDiffusion, n_steps: int, ddim_discretize: str = 'uniform', ddim_eta: float = 0):
-        super().__init__(diffusion_model, n_steps, ddim_discretize, ddim_eta)
-
