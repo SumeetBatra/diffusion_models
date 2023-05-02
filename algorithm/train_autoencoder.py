@@ -68,6 +68,8 @@ def parse_args():
     parser.add_argument('--clip_obs_rew', type=lambda x: bool(strtobool(x)), default=True, help='Clip obs and rewards b/w -10 and 10 in brax. Set to true if the PPGA archive trained with clipping enabled')
     parser.add_argument('--cut_out', type=lambda x: bool(strtobool(x)), default=False, help='cut out elites from the archive that have measure between [0.5,0.5] and [0.6,0.6]')
     parser.add_argument('--average_elites', type=lambda x: bool(strtobool(x)), default=False, help='Average the elites in the archive to get a single elite for each measure, advised to do it for cut_out=True')
+    parser.add_argument('--grad_clip', type=lambda x: bool(strtobool(x)), default=True,
+                        help = 'Clip gradients during backprop')
 
     args = parser.parse_args()
     return args
@@ -539,6 +541,8 @@ def train_autoencoder():
         epoch_kl_loss = 0
         epoch_norm_mse_loss = 0
         epoch_perceptual_loss = 0
+        epoch_grad_norm = 0
+
         loss_infos = []
         for step, (policies, measures) in enumerate(dataloader):
             optimizer.zero_grad()
@@ -581,9 +585,9 @@ def train_autoencoder():
                 loss += args.perceptual_loss_coef * perceptual_loss
 
             loss.backward()
-            # if step % 100 == 0:
-            #     print(f'Loss: {loss.item()}')
-                # print(f'grad norm: {grad_norm(model)}') TODO: fix this
+            if args.grad_clip:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
             optimizer.step()
             global_step += 1
 
@@ -591,6 +595,8 @@ def train_autoencoder():
             epoch_kl_loss += kl_loss.item()
             epoch_norm_mse_loss += loss_info['obsnorm_loss']
             loss_infos.append(loss_info)
+            epoch_grad_norm += grad_norm(model)
+
 
         print(f'Epoch {epoch} MSE Loss: {epoch_mse_loss / len(dataloader)}, ObsNorm MSE Loss: {epoch_norm_mse_loss / len(dataloader)}')
         if args.use_wandb:
@@ -605,6 +611,7 @@ def train_autoencoder():
                 'Loss/kl_loss': epoch_kl_loss / len(dataloader),
                 'Loss/perceptual_loss': epoch_perceptual_loss / len(dataloader),
                 'Loss/norm_mse_loss': epoch_norm_mse_loss / len(dataloader),
+                'grad_norm': epoch_grad_norm / len(train_dataloader),
                 'epoch': epoch + 1,
                 'global_step': global_step + 1
             })

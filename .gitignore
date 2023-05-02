@@ -7,5 +7,5 @@ wandb/
 data*/
 .vscode
 runs
-tmp
+tmp*
 *log.txt*
