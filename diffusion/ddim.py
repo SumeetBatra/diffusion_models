@@ -82,9 +82,27 @@ class DDIMSampler():
                  temperature: float = 1.,
                  classifier_free_guidance: bool = False,
                  classifier_scale: int = 1.0):
-        e_t = model(x, t, c)
+        e_t = None
         if classifier_free_guidance:
-            e_t = (1.0 + classifier_scale) * e_t - classifier_scale * model(x, t, cond=None)
+            # performs composition as described in https://arxiv.org/pdf/2206.01714.pdf
+            # if the number of conditions is 1, this reduces to classifier free guidance
+            e_t_uncond = model(x, t, cond=None)
+            if len(c.shape) == 2:
+                # standard classifier free guidance
+                e_t = model(x, t, c)
+                e_t = (1.0 + classifier_scale) * e_t - classifier_scale * e_t_uncond
+            elif len(c.shape) == 3:
+                dim0, dim1 = c.shape[0], c.shape[1]
+                x_orig_shape = x.shape
+
+                c = c.reshape(dim0 * dim1, -1)
+                x_cpy = torch.repeat_interleave(x, repeats=dim1, dim=0)
+                e_t = model(x_cpy, t, c)
+                e_t = e_t_uncond + ((classifier_scale + 1.0) * (e_t - e_t_uncond)).view((dim0, dim1,) + x_orig_shape[1:]).sum(dim=1)
+            else:
+                raise NotImplementedError(f'Unsupported condition dimensionality {c.shape} passed in. Must be 2 or 3 dim')
+        else:
+            e_t = model(x, t, c)
 
         x_prev, pred_x0 = self.get_x_prev_and_pred_x0(e_t, index, x, temperature=temperature, repeat_noise=repeat_noise)
         return x_prev, pred_x0, e_t
@@ -114,4 +132,9 @@ class DDIMSampler():
         x_prev = (alpha_prev ** 0.5) * pred_x0 + dir_xt + sigma * noise
 
         return x_prev, pred_x0
+
+
+class CompositionalSampler(DDIMSampler):
+    def __init__(self, diffusion_model: GaussianDiffusion, n_steps: int, ddim_discretize: str = 'uniform', ddim_eta: float = 0):
+        super().__init__(diffusion_model, n_steps, ddim_discretize, ddim_eta)
 
