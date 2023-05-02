@@ -61,7 +61,7 @@ def parse_args():
     # parser.add_argument('--model_checkpoint', type=str, default=None, help='Load an existing diffusion model for additional training')
 
     # misc
-    parser.add_argument('--reevaluate_archive_vae', type=lambda x: bool(strtobool(x)), default=False, help='Evaluate the VAE on the entire archive every 50 epochs')
+    parser.add_argument('--reevaluate_archive_vae', type=lambda x: bool(strtobool(x)), default=True, help='Evaluate the VAE on the entire archive every 50 epochs')
     parser.add_argument('--center_data', type=lambda x: bool(strtobool(x)), default=True,
                         help='Zero center the policy dataset with unit variance')
     parser.add_argument('--clip_obs_rew', type=lambda x: bool(strtobool(x)), default=True,
