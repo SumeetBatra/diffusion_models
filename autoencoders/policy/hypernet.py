@@ -99,7 +99,7 @@ class HypernetAutoEncoder(AutoEncoderBase):
         """
         # Map to embedding space from the quantized representation
         z = self.post_quant_conv(z)
-        recon_obsnorm = self.obsnorm_decoder(z)
+        recon_obsnorm = self.obsnorm_decoder(z, y)
         # Decode the image of shape `[batch_size, channels, height, width]`
         return self.decoder([self.dummy_actor() for _ in range(z.shape[0])], z, y), recon_obsnorm
 
@@ -163,16 +163,20 @@ class ObsNormDecoder(nn.Module):
         self.z_channels = z_channels
         self.z_height = z_height
         self.conditional = conditional
+        inp_dim = z_channels * z_height * z_height
+
+        if self.conditional:
+            inp_dim += 2
 
         self.mean_dec = nn.Sequential(
-            nn.Linear(z_channels * z_height * z_height, hid),
+            nn.Linear(inp_dim, hid),
             nn.ReLU(),
             nn.Linear(hid, hid),
             nn.ReLU(),
             nn.Linear(hid, obs_shape)
         )
         self.std_dec = nn.Sequential(
-            nn.Linear(z_channels * z_height * z_height, hid),
+            nn.Linear(inp_dim, hid),
             nn.ReLU(),
             nn.Linear(hid, hid),
             nn.ReLU(),
@@ -181,6 +185,8 @@ class ObsNormDecoder(nn.Module):
         
     def forward(self, z: torch.Tensor, y: torch.Tensor = None):
         z = z.view(z.shape[0], self.z_channels * self.z_height * self.z_height)
+        if self.conditional:
+            z = torch.cat([z, y], dim=-1)
         mean = self.mean_dec(z)
         std = self.std_dec(z)
         return {'obs_normalizer.obs_rms.mean': mean, 'obs_normalizer.obs_rms.logstd': std}

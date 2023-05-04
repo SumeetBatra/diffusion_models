@@ -109,7 +109,7 @@ class MLP_GHN(nn.Module):
         hid = hid * 2
         
         if self.conditional:
-            self.y_encoder = nn.Linear(2, len(self.model_shape_indicators)).to(device)
+            self.y_encoder = nn.Linear(2, int(hid/2)).to(device)
             hid = int(hid * 1.5)
 
         if layernorm:

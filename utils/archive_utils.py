@@ -131,14 +131,18 @@ def evaluate(vec_agent, vec_env, num_dims, use_action_means=True, normalize_obs=
 
 def reconstruct_agents_from_vae(original_agents: list[Actor], vae: nn.Module, device,
                             center_data: bool = False,
-                            weight_normalizer = None,):
+                            weight_normalizer = None,
+                            measure_batch = None,):
 
     weights_dict = [TensorDict(p.state_dict()) for p in original_agents]
     weights_dict = cat_tensordicts(weights_dict)
     if center_data:
         weights_dict = weight_normalizer.normalize(weights_dict)
 
-    (rec_agents, rec_obsnorms), _ = vae(weights_dict)
+    if vae.conditional:
+        (rec_agents, rec_obsnorms), _ = vae(None, torch.tensor(measure_batch).to(device).to(torch.float32))
+    else:
+        (rec_agents, rec_obsnorms), _ = vae(weights_dict)
     
     recon_params_batch = [TensorDict(p.state_dict()) for p in rec_agents]
     recon_params_batch = cat_tensordicts(recon_params_batch)
@@ -263,7 +267,8 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
             if diffusion_model is None:
                 agent_batch = reconstruct_agents_from_vae(agent_batch, vae, device,
                                                           center_data=center_data,
-                                                          weight_normalizer=weight_normalizer,)
+                                                          weight_normalizer=weight_normalizer,
+                                                          measure_batch = measure_batch,)
             else:
                 agent_batch = reconstruct_agents_from_ldm(agent_batch, measure_batch, vae, device, sampler,
                                                           scale_factor, diffusion_model,

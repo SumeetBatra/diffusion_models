@@ -109,38 +109,13 @@ def evaluate_agent_quality(env_cfg: dict,
     if normalize_obs:
         recon_params_batch['obs_normalizer.obs_rms.var'] = torch.exp(recon_params_batch['obs_normalizer.obs_rms.logstd'] * 2)
         recon_params_batch['obs_normalizer.obs_rms.count'] = gt_params_batch['obs_normalizer.obs_rms.count']
-        del gt_params_batch['obs_normalizer.obs_rms.logstd']
-        del gt_params_batch['obs_normalizer.obs_rms.std']
-        del recon_params_batch['obs_normalizer.obs_rms.logstd']
+        if 'obs_normalizer.obs_rms.logstd' in gt_params_batch:
+            del gt_params_batch['obs_normalizer.obs_rms.logstd']
+        if 'obs_normalizer.obs_rms.std' in gt_params_batch:
+            del gt_params_batch['obs_normalizer.obs_rms.std']
+        if 'obs_normalizer.obs_rms.mean' in gt_params_batch:
+            del recon_params_batch['obs_normalizer.obs_rms.logstd']
 
-    # load all relevant data for ground truth and reconstructed agents
-    # gt_agents, rec_agents = [], []
-    # for k in range(test_batch_size):
-    #     gt_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device)
-    #     rec_agent = Actor(obs_dim, action_shape, normalize_obs=normalize_obs).to(device)
-    #
-    #     actor_weights = TensorDict({key: gt_params_batch[key][k] for key in gt_params_batch.keys() if 'actor' in key or 'obs_normalizer' in key})
-    #     recon_actor_weights = TensorDict(rec_policies[k].state_dict())
-    #
-    #     if normalize_obs:
-    #         rec_obsnorms_squashed = TensorDict({
-    #             'obs_normalizer.obs_rms.mean': rec_obs_norms['obs_normalizer.obs_rms.mean'][k],
-    #             'obs_normalizer.obs_rms.logstd': rec_obs_norms['obs_normalizer.obs_rms.logstd'][k],
-    #             'obs_normalizer.obs_rms.count': gt_params_batch['obs_normalizer.obs_rms.count'][k]
-    #         })
-    #         recon_actor_weights.update(rec_obsnorms_squashed)
-    #
-    #     if center_data:
-    #         assert weight_normalizer is not None and isinstance(weight_normalizer, WeightNormalizer)
-    #
-    #         actor_weights = weight_normalizer.denormalize(actor_weights)
-    #         recon_actor_weights = weight_normalizer.denormalize(recon_actor_weights)
-    #
-    #     if normalize_obs:
-    #         recon_actor_weights['obs_normalizer.obs_rms.var'] = torch.exp(recon_actor_weights['obs_normalizer.obs_rms.logstd'] * 2)
-    #         del actor_weights['obs_normalizer.obs_rms.logstd']
-    #         del actor_weights['obs_normalizer.obs_rms.std']
-    #         del recon_actor_weights['obs_normalizer.obs_rms.logstd']
 
     recon_params_batch['actor_logstd'] = gt_params_batch['actor_logstd']
 
@@ -474,10 +449,10 @@ def train_autoencoder():
                 gt_measure = gt_measure.to(device).to(torch.float32)
 
                 if args.conditional:
-                    rec_policies, _ = model(gt_params, gt_measure)
+                    (rec_policies, rec_obsnorms), _ = model(gt_params, gt_measure)
                 else:
                     (rec_policies, rec_obsnorms), _ = model(gt_params)
-                    rec_obsnorms = TensorDict(rec_obsnorms)
+                rec_obsnorms = TensorDict(rec_obsnorms)
 
                 info = evaluate_agent_quality(env_cfg,
                                               env,
@@ -491,7 +466,7 @@ def train_autoencoder():
 
                 # now try to sample a policy with just measures
                 if args.conditional:
-                    rec_policies, _ = model(None, gt_measure)
+                    (rec_policies, rec_obsnorms), _ = model(None, gt_measure)
 
                     info2 = evaluate_agent_quality(env_cfg,
                                                    env,
