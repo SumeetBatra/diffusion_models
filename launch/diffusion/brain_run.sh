@@ -16,7 +16,7 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
 # ###########################################################
 # centering=True
-# env_name=walker
+# env_name=walker2d
 # rn=walker_centering_diffusion
 # # ---------------------------------------------------------
 # seed=111
@@ -56,7 +56,7 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
 # ###########################################################
 # centering=False
-# env_name=walker
+# env_name=walker2d
 # rn=walker_no_centering_diffusion
 # # ---------------------------------------------------------
 # seed=111
@@ -101,4 +101,4 @@ enc=paper_results/humanoid/autoencoder/humanoid_autoencoder_20230502-194214_444/
 
 
 
-srun -c12 python -m algorithm.train --env_name $env_name --use_wandb True --wandb_tag final_diffusion --wandb_group final_diffusion --seed $seed --wandb_run_name $rn --output_dir paper_results --num_epochs 500 --autoencoder_cp_path $enc --centering $centering
+srun -c12 python -m algorithm.train --env_name $env_name --use_wandb True --wandb_tag final_diffusion --wandb_group final_diffusion --seed $seed --wandb_run_name $rn --output_dir paper_results --num_epochs 500 --autoencoder_cp_path $enc --center_data $centering
