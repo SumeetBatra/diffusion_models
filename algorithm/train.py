@@ -260,7 +260,7 @@ def train(cfg):
     epochs = cfg.num_epochs
     global_step = 0
     for epoch in range(epochs + 1):
-        if cfg.track_agent_quality and epoch % 5 == 0:
+        if cfg.track_agent_quality and epoch % 10 == 0:
             model_name = f'{exp_name}.pt'
             torch.save(model.state_dict(), os.path.join(str(cfg.model_checkpoint_folder), model_name))
             
@@ -292,7 +292,7 @@ def train(cfg):
                                             normalize_obs=True,
                                             **dataset_kwargs)
 
-                if epoch % 10 == 0 and cfg.reevaluate_archive_vae:
+                if epoch % 50 == 0 and cfg.reevaluate_archive_vae:
                     # evaluate the model on the entire archive
                     print('Evaluating model on entire archive...')
                     reconstruction_model = model
