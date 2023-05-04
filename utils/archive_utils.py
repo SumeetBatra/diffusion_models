@@ -300,6 +300,7 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
                               threshold_min=-10000,
                               seed=env_cfg.seed,
                               qd_offset=reward_offset[env_cfg.env_name])
+    all_objs[np.isnan(all_objs)] = 0
     # add the re-evaluated solutions to the new archive
     new_archive.add(
         np.ones((len(all_objs), 1)),

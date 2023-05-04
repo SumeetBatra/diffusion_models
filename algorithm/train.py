@@ -36,7 +36,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # experiment params
     parser.add_argument('--env_name', choices=['walker2d', 'halfcheetah', 'humanoid', 'ant'])
-    parser.add_argument('--num_epochs', type=int, default=40)
+    parser.add_argument('--num_epochs', type=int, default=300)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--output_dir', type=str, default='results')
 
