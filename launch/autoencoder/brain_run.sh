@@ -1,30 +1,86 @@
 #!/bin/bash
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem-per-cpu=4G
-#SBATCH --time=09:00:00
+#SBATCH --cpus-per-task=12
+#SBATCH --mem-per-cpu=8G
+#SBATCH --time=16:00:00
 #SBATCH -N1
-#SBATCH --output=tmp/dm-%j.log
+#SBATCH --output=tmp2/dm-%j.log
 
 
 eval "$(conda shell.bash hook)"
 conda activate qd
 
 
-tags=plablmo
-
-pl=0
-
-# pl=0.01
-
-# pl=0.0001
-
-
 
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
-for seed in 123 456 789; do
-    srun -c4 python -m algorithm.train_autoencoder --env_name halfcheetah --use_wandb True --num_epochs 200 --wandb_tag $tags --perceptual_loss $pl  --seed $seed &
-done
 
-wait
+
+###########################################################
+ghn_hid=8
+center=True
+env=ant
+rn=ant_centering
+# ---------------------------------------------------------
+seed=111
+
+# seed=222
+
+# seed=333
+
+# seed=444
+# ---------------------------------------------------------
+###########################################################
+
+# ###########################################################
+# ghn_hid=8
+# center=False
+# env=ant
+# rn=ant_no_centering
+# # ---------------------------------------------------------
+# # seed=111
+
+# # seed=222
+
+# # seed=333
+
+# # seed=444
+# # ---------------------------------------------------------
+# ###########################################################
+
+# ###########################################################
+# ghn_hid=8
+# center=True
+# env=halfcheetah
+# rn=halfcheetah_centering
+# # ---------------------------------------------------------
+# # seed=111
+
+# # seed=222
+
+# # seed=333
+
+# # seed=444
+# # ---------------------------------------------------------
+# ###########################################################
+
+# ###########################################################
+# ghn_hid=8
+# center=False
+# env=halfcheetah
+# rn=halfcheetah_no_centering
+# # ---------------------------------------------------------
+# # seed=111
+
+# # seed=222
+
+# # seed=333
+
+# # seed=444
+# # ---------------------------------------------------------
+# ###########################################################
+
+
+
+
+srun -c12 python -m algorithm.train_autoencoder --env_name $env --use_wandb True --wandb_tag final --wandb_group final --seed $seed --wandb_run_name $rn --output_dir paper_results --num_epochs 1000 --center_data $center --ghn_hid $ghn_hid
