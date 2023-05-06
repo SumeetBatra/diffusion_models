@@ -90,7 +90,7 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
             'Avg_Fitness': original_reevaluated_archive.stats.obj_mean,
             'QD_Score': original_reevaluated_archive.offset_qd_score
         }
-        if image_path is not None:
+        if env_cfg.num_dims == 2 and image_path is not None:
             orig_image_array = save_heatmap(original_reevaluated_archive,
                                             os.path.join(image_path, f"original_archive_{suffix}.png"))
 
@@ -115,14 +115,20 @@ def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 
         'Reconstructed': reconstructed_results,
     }
 
-    if image_path is not None:
+    if env_cfg.num_dims == 2 and image_path is not None:
         recon_image_array = save_heatmap(reconstructed_evaluated_archive,
                                         os.path.join(image_path, f"reconstructed_archive_{suffix}.png"))
 
-    image_results = {
-        'Original': orig_image_array if not ignore_first else None,
-        'Reconstructed': recon_image_array,
-    }
+    if env_cfg.num_dims == 2:
+        image_results = {
+            'Original': orig_image_array if not ignore_first else None,
+            'Reconstructed': recon_image_array,
+        }
+    else:
+        image_results = {
+            'Original': None,
+            'Reconstructed': None,
+        }
     return results, image_results
 
 

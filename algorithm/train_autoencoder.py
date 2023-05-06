@@ -150,16 +150,20 @@ def evaluate_agent_quality(env_cfg: dict,
     final_info = {
                     'Behavior/measure_mse_0': avg_measure_mse[0],
                     'Behavior/measure_mse_1': avg_measure_mse[1],
+                    'Behavior/measure_mse_2': avg_measure_mse[2] if env_cfg.num_dims == 3 else 0,
                     'Behavior/orig_reward': avg_orig_reward,
                     'Behavior/rec_reward': avg_reconstructed_reward,
                     'Behavior/reward_ratio': reward_ratio,
                     'Behavior/p-value_0': avg_t_test[0],
                     'Behavior/p-value_1': avg_t_test[1],
+                    'Behavior/p-value_2': avg_t_test[2] if env_cfg.num_dims == 3 else 0,
                     'Behavior/js_div': avg_js_div,
                     'Behavior/std_orig_measure_0': avg_std_orig_measure[0],
                     'Behavior/std_orig_measure_1': avg_std_orig_measure[1],
+                    'Behavior/std_orig_measure_2': avg_std_orig_measure[2] if env_cfg.num_dims == 3 else 0,
                     'Behavior/std_rec_measure_0': avg_std_rec_measure[0],
                     'Behavior/std_rec_measure_1': avg_std_rec_measure[1],
+                    'Behavior/std_rec_measure_2': avg_std_rec_measure[2] if env_cfg.num_dims == 3 else 0,
                 }
     return final_info
 
@@ -512,7 +516,7 @@ def train_autoencoder():
                     })
 
                     wandb.log(info)
-                    if args.reevaluate_archive_vae:
+                    if args.reevaluate_archive_vae and args.env_name != "ant":
                         wandb.log({'Archive/recon_image': wandb.Image(image_results['Reconstructed'], caption=f"Epoch {epoch + 1}")})
 
         epoch_mse_loss = 0
@@ -619,8 +623,9 @@ def train_autoencoder():
     log.debug(f"Original Archive Reevaluated Results: {subsample_results['Original']}")
 
     if args.use_wandb:
-        wandb.log({'Archive/recon_image_final': wandb.Image(image_results['Reconstructed'], caption=f"Final")})
-        wandb.log({'Archive/original_image': wandb.Image(image_results['Original'], caption=f"Final")})
+        if args.env_name != "ant":
+            wandb.log({'Archive/recon_image_final': wandb.Image(image_results['Reconstructed'], caption=f"Final")})
+            wandb.log({'Archive/original_image': wandb.Image(image_results['Original'], caption=f"Final")})
         wandb.log({'Archive/original_' + key : val for key, val in subsample_results['Original'].items()})
 
 if __name__ == '__main__':
