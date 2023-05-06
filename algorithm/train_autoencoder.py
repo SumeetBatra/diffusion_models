@@ -170,6 +170,7 @@ def shaped_elites_dataset_factory(env_name,
                                   center_data: bool = False,
                                   weight_normalizer: Optional[WeightNormalizer] = None,
                                   use_language: bool = False,
+                                  results_folder = "results",
                                   cut_out = False,):
     archive_data_path = f'data/{env_name}'
     archive_dfs = []
@@ -211,7 +212,7 @@ def shaped_elites_dataset_factory(env_name,
 
         # load centroids if they were previously calculated. Maintains consistency across runs
         centroids = None
-        centroids_path = f'results/{env_name}/centroids.npy'
+        centroids_path = f'{results_folder}/{env_name}/centroids.npy'
         if os.path.exists(centroids_path):
             log.info(f'Existing centroids found at {centroids_path}. Loading centroids...')
             centroids = np.load(centroids_path)
@@ -403,12 +404,14 @@ def train_autoencoder():
                                                                                  is_eval=False,
                                                                                  center_data=args.center_data,
                                                                                  cut_out=args.cut_out,
+                                                                                 results_folder=args.output_dir,
                                                                                  weight_normalizer=weight_normalizer)
     test_dataloader, test_archive, *_ = shaped_elites_dataset_factory(args.env_name,
                                                                       batch_size=test_batch_size,
                                                                       is_eval=True,
                                                                       center_data=args.center_data,
                                                                       cut_out=args.cut_out,
+                                                                      results_folder=args.output_dir,
                                                                       weight_normalizer=weight_normalizer)
 
     if not os.path.exists(weight_normalizer_savepath) and args.center_data:
