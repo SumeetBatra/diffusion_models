@@ -205,11 +205,13 @@ def train(cfg):
     train_dataloader, train_archive, weight_normalizer = shaped_elites_dataset_factory(
         cfg.env_name, batch_size=train_batch_size, is_eval=False,
         center_data=cfg.center_data,
+        results_folder=cfg.output_dir,
         use_language=cfg.use_language,
         weight_normalizer=weight_normalizer)
     test_dataloader, *_ = shaped_elites_dataset_factory(
         cfg.env_name, batch_size=test_batch_size, is_eval=True,
         center_data=cfg.center_data, weight_normalizer=weight_normalizer,
+        results_folder=cfg.output_dir,
         use_language=cfg.use_language)
 
     if not os.path.exists(weight_normalizer_savepath) and cfg.center_data:

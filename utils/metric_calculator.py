@@ -455,7 +455,7 @@ def evaluate_ldm_subsample_with_mem(env_name: str, archive_df=None, ldm=None, au
 
 
 
-final_results_folder = "/home/shashank/research/qd/"
+final_results_folder = "./"
 experiments_dict_cpy = copy.deepcopy(experiments_dict)
 env = "humanoid"
 (env_ind, env_experiments_dict) = [(ind,env_dict) for ind,env_dict in enumerate(experiments_dict['results']) if env_dict['env'] == env][0]
