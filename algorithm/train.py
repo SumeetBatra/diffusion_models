@@ -170,7 +170,8 @@ def train(cfg):
             channel_multipliers=[1, 2, 4],
             n_heads=4,
             d_cond=256,
-            logvar=logvar
+            logvar=logvar,
+            measure_dim=shared_params[cfg.env_name]['env_cfg']['num_dims']
         )
     autoencoder = AutoEncoder(emb_channels=cfg.emb_channels,
                                 z_channels=cfg.z_channels,

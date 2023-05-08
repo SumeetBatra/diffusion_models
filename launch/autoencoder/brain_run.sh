@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=12
-#SBATCH --mem-per-cpu=4G
+#SBATCH --mem-per-cpu=8G
 #SBATCH --time=16:00:00
 #SBATCH -N1
 #SBATCH --output=tmp2/dm-%j.log
@@ -15,7 +15,7 @@ conda activate qd
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
 
-
+# kl=1e-6
 # ###########################################################
 # ghn_hid=8
 # center=True
@@ -81,6 +81,58 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 # ###########################################################
 
 
+# KL div ablation
+# ###########################################################
+# ghn_hid=16
+# center=True
+# env=humanoid
+# rn=humanoid_centering
+# kl=1e-4
+# # ---------------------------------------------------------
+# # seed=111
+
+# # seed=222
+
+# # seed=333
+
+# # seed=444
+# # ---------------------------------------------------------
+# ###########################################################
+
+# ###########################################################
+# ghn_hid=16
+# center=True
+# env=humanoid
+# rn=humanoid_centering
+# kl=1e-2
+# # ---------------------------------------------------------
+# # seed=111
+
+# # seed=222
+
+# # seed=333
+
+# # seed=444
+# # ---------------------------------------------------------
+# ###########################################################
+
+# ###########################################################
+# ghn_hid=16
+# center=True
+# env=humanoid
+# rn=humanoid_centering
+# kl=1
+# # ---------------------------------------------------------
+# # seed=111
+
+# # seed=222
+
+# # seed=333
+
+# # seed=444
+# # ---------------------------------------------------------
+# ###########################################################
 
 
-srun -c12 python -m algorithm.train_autoencoder --env_name $env --use_wandb True --wandb_tag final --wandb_group final --seed $seed --wandb_run_name $rn --output_dir paper_results --num_epochs 1000 --center_data $center --ghn_hid $ghn_hid
+
+srun -c12 python -m algorithm.train_autoencoder --env_name $env --use_wandb True --wandb_tag final --wandb_group final --seed $seed --wandb_run_name $rn --output_dir paper_results --num_epochs 1000 --center_data $center --ghn_hid $ghn_hid --kl_coef $kl
