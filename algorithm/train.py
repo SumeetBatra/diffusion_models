@@ -170,7 +170,8 @@ def train(cfg):
             channel_multipliers=[1, 2, 4],
             n_heads=4,
             d_cond=256,
-            logvar=logvar
+            logvar=logvar,
+            measure_dim=shared_params[cfg.env_name]['env_cfg']['num_dims']
         )
     autoencoder = AutoEncoder(emb_channels=cfg.emb_channels,
                                 z_channels=cfg.z_channels,
@@ -205,11 +206,13 @@ def train(cfg):
     train_dataloader, train_archive, weight_normalizer = shaped_elites_dataset_factory(
         cfg.env_name, batch_size=train_batch_size, is_eval=False,
         center_data=cfg.center_data,
+        results_folder=cfg.output_dir,
         use_language=cfg.use_language,
         weight_normalizer=weight_normalizer)
     test_dataloader, *_ = shaped_elites_dataset_factory(
         cfg.env_name, batch_size=test_batch_size, is_eval=True,
         center_data=cfg.center_data, weight_normalizer=weight_normalizer,
+        results_folder=cfg.output_dir,
         use_language=cfg.use_language)
 
     if not os.path.exists(weight_normalizer_savepath) and cfg.center_data:

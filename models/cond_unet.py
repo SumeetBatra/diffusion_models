@@ -106,6 +106,7 @@ class ConditionalUNet(nn.Module):
                  n_heads: int,
                  tf_layers: int = 1,
                  d_cond: int = 768,
+                 measure_dim = 2,
                  logvar: torch.tensor = None):
         super().__init__()
 
@@ -114,7 +115,7 @@ class ConditionalUNet(nn.Module):
 
         # embedding layer for the items to condition on
         self.cond_embed = nn.Sequential(
-            nn.Linear(2, d_cond),
+            nn.Linear(measure_dim, d_cond),
             nn.SiLU(),
             nn.Linear(d_cond, d_cond)
         )
