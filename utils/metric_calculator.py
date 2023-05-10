@@ -411,17 +411,11 @@ def evaluate_ldm_subsample_with_mem(env_name: str, archive_df=None, ldm=None, au
     normalize_obs, normalize_returns = True, False
     if not ignore_first:
         print('Re-evaluated Original Archive')
-        original_reevaluated_archive = reevaluate_ppga_archive(env_cfg,
+        Archive_Measure_Error_Mean = reevaluate_ppga_archive_mem(env_cfg,
                                                                normalize_obs,
                                                                normalize_returns,
                                                                original_archive,
                                                                average=average)
-        original_results = {
-            'Coverage': original_reevaluated_archive.stats.coverage,
-            'Max_fitness': original_reevaluated_archive.stats.obj_max,
-            'Avg_Fitness': original_reevaluated_archive.stats.obj_mean,
-            'QD_Score': original_reevaluated_archive.offset_qd_score
-        }
 
     print('Re-evaluated Reconstructed Archive')
     Measure_Error_Mean = reevaluate_ppga_archive_mem(env_cfg,
@@ -450,14 +444,14 @@ def evaluate_ldm_subsample_with_mem(env_name: str, archive_df=None, ldm=None, au
     #     'Reconstructed': reconstructed_results,
     # }
 
-    return Measure_Error_Mean
+    return Measure_Error_Mean, Archive_Measure_Error_Mean
 
 
 
 
 final_results_folder = "/home/shashank/research/qd/"
 experiments_dict_cpy = copy.deepcopy(experiments_dict)
-env = "humanoid"
+env = "walker2d"
 (env_ind, env_experiments_dict) = [(ind,env_dict) for ind,env_dict in enumerate(experiments_dict['results']) if env_dict['env'] == env][0]
 latent_channels = 4
 emb_channels=4
@@ -549,14 +543,14 @@ for exp_ind, experiment in enumerate(env_experiments_dict['experiments_dict_list
             'weight_normalizer': weight_normalizer
         }
 
-        Measure_Error_Mean = evaluate_ldm_subsample_with_mem(env_name=env,
+        Measure_Error_Mean, Archive_Measure_Error_Mean = evaluate_ldm_subsample_with_mem(env_name=env,
             archive_df=train_archive[0],
             ldm=model,
             autoencoder=autoencoder,
             N=-1,
             image_path = None,
             # suffix = str(epoch),
-            ignore_first=True,
+            ignore_first=False,
             sampler=sampler,
             scale_factor=scale_factor,
             normalize_obs=True,
@@ -570,6 +564,7 @@ for exp_ind, experiment in enumerate(env_experiments_dict['experiments_dict_list
 
         print(f"Measure_Error_Mean: {Measure_Error_Mean}")
         experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Measure_Error_Mean'] = Measure_Error_Mean
+        experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_Measure_Error_Mean'] = Archive_Measure_Error_Mean
 
         with open(f"{final_results_folder}/paper_results/{env}/diffusion_model/experiments_dict.json", 'w') as f:
             json.dump(experiments_dict_cpy, f, indent=4)
