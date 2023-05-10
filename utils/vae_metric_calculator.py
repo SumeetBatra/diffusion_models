@@ -16,7 +16,7 @@ from utils.archive_utils import archive_df_to_archive,reevaluate_ppga_archive
 from ribs.archives import GridArchive
 from envs.brax_custom.brax_env import make_vec_env_brax
 from RL.actor_critic import Actor
-from utils.archive_utils import reconstruct_agents_from_ldm, evaluate
+from utils.archive_utils import reconstruct_agents_from_vae, evaluate
 import torch.nn as nn
 from models.vectorized import VectorizedActor
 import os
@@ -29,76 +29,26 @@ experiments_dict = {
             "env": "humanoid",
             "experiments_dict_list" : [
                 {
-                    "centering": True,
-                    "ghn_size": 8,
-                    "kl": 1e-6,
-                    "folders": [
-                        {
-                            "seed": 111,
-                            "name": "humanoid_diffusion_model_20230504-041644_111"
-                        },
-                        {
-                            "seed": 222,
-                            "name": "humanoid_diffusion_model_20230504-131631_222"
-                        },
-                        {
-                            "seed": 333,
-                            "name": "humanoid_diffusion_model_20230504-131635_333"
-                        },
-                        {
-                            "seed": 444,
-                            "name": "humanoid_diffusion_model_20230504-072944_444"
-                        }
-                    ],
-
-                },
-
-                {
                     "centering": False,
-                    "ghn_size": 8,
-                    "kl": 1e-6,
-                    "folders": [
-                        {
-                            "seed": 111,
-                            "name": "humanoid_diffusion_model_20230504-073156_111"
-                        },
-                        {
-                            "seed": 222,
-                            "name": "humanoid_diffusion_model_20230504-085106_222"
-                        },
-                        # {
-                        #     "seed": 333,
-                        #     "name": "humanoid_diffusion_model_20230504-090220_333"
-                        # },
-                        {
-                            "seed": 444,
-                            "name": "humanoid_diffusion_model_20230504-105735_444"
-                        }
-                    ],
-
-                },
-
-                {
-                    "centering": True,
                     "ghn_size": 16,
-                    "kl": 1e-6,
+                    "kl": 1e-2,
                     "folders": [
                         {
                             "seed": 111,
-                            "name": "humanoid_diffusion_model_20230505-072152_111"
+                            "name": "conditional_humanoid_autoencoder_20230508-224726_111"
                         },
                         {
                             "seed": 222,
-                            "name": "humanoid_diffusion_model_20230505-072152_222"
+                            "name": "conditional_humanoid_autoencoder_20230508-224831_222"
                         },
                         {
                             "seed": 333,
-                            "name": "humanoid_diffusion_model_20230505-074108_333"
+                            "name": "conditional_humanoid_autoencoder_20230509-020842_333"
                         },
                         {
                             "seed": 444,
-                            "name": "humanoid_diffusion_model_20230505-074238_444"
-                        }
+                            "name": "conditional_humanoid_autoencoder_20230509-021417_444"
+                        },
                     ],
 
                 },
@@ -110,75 +60,24 @@ experiments_dict = {
                     "folders": [
                         {
                             "seed": 111,
-                            "name": "humanoid_diffusion_model_20230505-074434_111"
+                            "name": "conditional_humanoid_autoencoder_20230504-154350_111"
                         },
                         {
                             "seed": 222,
-                            "name": "humanoid_diffusion_model_20230505-074447_222"
+                            "name": "conditional_humanoid_autoencoder_20230504-154350_222"
                         },
                         {
                             "seed": 333,
-                            "name": "humanoid_diffusion_model_20230505-082740_333"
-                        },
-                        # {
-                        #     "seed": 444,
-                        #     "name": "humanoid_diffusion_model_20230504-072944_444"
-                        # }
-                    ],
-
-                },
-
-                {
-                    "centering": True,
-                    "ghn_size": 32,
-                    "kl": 1e-6,
-                    "folders": [
-                        {
-                            "seed": 111,
-                            "name": "humanoid_diffusion_model_20230505-083900_111"
-                        },
-                        {
-                            "seed": 222,
-                            "name": "humanoid_diffusion_model_20230505-091645_222"
-                        },
-                        {
-                            "seed": 333,
-                            "name": "humanoid_diffusion_model_20230505-103651_333"
+                            "name": "conditional_humanoid_autoencoder_20230504-154351_333"
                         },
                         {
                             "seed": 444,
-                            "name": "humanoid_diffusion_model_20230505-104603_444"
-                        }
+                            "name": "conditional_humanoid_autoencoder_20230504-154351_444"
+                        },
                     ],
 
                 },
 
-                {
-                    "centering": False,
-                    "ghn_size": 32,
-                    "kl": 1e-6,
-                    "folders": [
-                        {
-                            "seed": 111,
-                            "name": "humanoid_diffusion_model_20230505-104603_111"
-                        },
-                        {
-                            "seed": 222,
-                            "name": "humanoid_diffusion_model_20230505-123637_222"
-                        },
-                        {
-                            "seed": 333,
-                            "name": "humanoid_diffusion_model_20230505-124223_333"
-                        },
-                        {
-                            "seed": 444,
-                            "name": "humanoid_diffusion_model_20230505-125828_444"
-                        }
-                    ],
-
-                },
-
-                # higher KL
                 {
                     "centering": True,
                     "ghn_size": 16,
@@ -186,79 +85,49 @@ experiments_dict = {
                     "folders": [
                         {
                             "seed": 111,
-                            "name": "humanoid_diffusion_model_20230509-040115_111"
+                            "name": "conditional_humanoid_autoencoder_20230508-223935_111"
                         },
-                        # {
-                        #     "seed": 222,
-                        #     "name": "humanoid_diffusion_model_20230505-072152_222"
-                        # },
+                        {
+                            "seed": 222,
+                            "name": "conditional_humanoid_autoencoder_20230508-224058_222"
+                        },
                         {
                             "seed": 333,
-                            "name": "humanoid_diffusion_model_20230509-041637_333"
+                            "name": "conditional_humanoid_autoencoder_20230508-224214_333"
                         },
                         {
                             "seed": 444,
-                            "name": "humanoid_diffusion_model_20230509-044508_444"
-                        }
+                            "name": "conditional_humanoid_autoencoder_20230508-224703_444"
+                        },
                     ],
 
+                },
+
+                {
+                    "centering": True,
+                    "ghn_size": 16,
+                    "kl": 1e-6,
+                    "folders": [
+                        {
+                            "seed": 111,
+                            "name": "conditional_humanoid_autoencoder_20230504-154109_111"
+                        },
+                        {
+                            "seed": 222,
+                            "name": "conditional_humanoid_autoencoder_20230504-162654_222"
+                        },
+                        {
+                            "seed": 333,
+                            "name": "conditional_humanoid_autoencoder_20230504-154341_333"
+                        },
+                        {
+                            "seed": 444,
+                            "name": "conditional_humanoid_autoencoder_20230504-154350_444"
+                        },
+                    ],
                 },
             ]
         },
-        {
-            "env": "walker2d",
-            "experiments_dict_list" : [
-                {
-                    "centering": True,
-                    "ghn_size": 8,
-                    "kl": 1e-6,
-                    "folders": [
-                        {
-                            "seed": 111,
-                            "name": "walker2d_diffusion_model_20230503-232717_111"
-                        },
-                        {
-                            "seed": 222,
-                            "name": "walker2d_diffusion_model_20230503-233013_222"
-                        },
-                        {
-                            "seed": 333,
-                            "name": "walker2d_diffusion_model_20230504-002031_333"
-                        },
-                        {
-                            "seed": 444,
-                            "name": "walker2d_diffusion_model_20230504-010106_444"
-                        }
-                    ],
-
-                },
-
-                {
-                    "centering": False,
-                    "ghn_size": 8,
-                    "kl": 1e-6,
-                    "folders": [
-                        {
-                            "seed": 111,
-                            "name": "walker2d_diffusion_model_20230504-014207_111"
-                        },
-                        {
-                            "seed": 222,
-                            "name": "walker2d_diffusion_model_20230504-041134_222"
-                        },
-                        {
-                            "seed": 333,
-                            "name": "walker2d_diffusion_model_20230504-020519_333"
-                        },
-                        {
-                            "seed": 444,
-                            "name": "walker2d_diffusion_model_20230504-041317_444"
-                        }
-                    ],
-
-                },
-            ]
-        }
     ]
 }
 
@@ -293,8 +162,8 @@ def reevaluate_ppga_archive_mem(env_cfg: AttrDict,
     if vae is not None:
         vae.to(device)
 
-    if diffusion_model is not None:
-        diffusion_model.to(device)
+    # if diffusion_model is not None:
+    #     diffusion_model.to(device)
 
     if reconstructed_agents:
         assert vae is not None and isinstance(vae, nn.Module), 'reconstructed_agents was set to true, but a valid VAE ' \
@@ -323,13 +192,10 @@ def reevaluate_ppga_archive_mem(env_cfg: AttrDict,
         measure_batch = measures_list[i: i + solution_batch_size]
 
         if reconstructed_agents:
-            agent_batch = reconstruct_agents_from_ldm(agent_batch, measure_batch, vae, device, sampler,
-                            scale_factor, diffusion_model,
-                            center_data=center_data,
-                            weight_normalizer=weight_normalizer,
-                            latent_shape=latent_shape,
-                            uniform_sampling=uniform_sampling
-                        )
+            agent_batch = reconstruct_agents_from_vae(agent_batch, vae, device,
+                                                          center_data=center_data,
+                                                          weight_normalizer=weight_normalizer,
+                                                          measure_batch = measure_batch,)
 
         if env_cfg.env_batch_size % len(agent_batch) != 0 and len(original_archive) % solution_batch_size != 0:
             del vec_env
@@ -354,43 +220,14 @@ def reevaluate_ppga_archive_mem(env_cfg: AttrDict,
     # Measure_Error_Mean is the 2 norm of the difference between the true measure and the estimated measure
     Measure_Error_Mean = np.linalg.norm(true_measures - all_measures, axis=1).mean()
 
-    # # create a new archive
-    # archive_dims = [env_cfg.grid_size] * env_cfg.num_dims
-    # bounds = [(0., 1.0) for _ in range(env_cfg.num_dims)]
-    # new_archive = GridArchive(solution_dim=1,
-    #                           dims=archive_dims,
-    #                           ranges=bounds,
-    #                           threshold_min=-10000,
-    #                           seed=env_cfg.seed,
-    #                           qd_offset=reward_offset[env_cfg.env_name])
-    # all_objs[np.isnan(all_objs)] = 0
-    # # add the re-evaluated solutions to the new archive
-    # new_archive.add(
-    #     np.ones((len(all_objs), 1)),
-    #     all_objs,
-    #     all_measures,
-    #     all_metadata
-    # )
-    # print(f'Coverage: {new_archive.stats.coverage} \n'
-    #       f'Max fitness: {new_archive.stats.obj_max} \n'
-    #       f'Avg Fitness: {new_archive.stats.obj_mean} \n'
-    #       f'QD Score: {new_archive.offset_qd_score}')
-
-    # if save_path is not None:
-    #     archive_fp = os.path.join(save_path, f'{env_cfg.env_name}_reeval_archive.pkl')
-    #     with open(archive_fp, 'wb') as f:
-    #         pickle.dump(new_archive, f)
-
     return Measure_Error_Mean
 
 
-def evaluate_ldm_subsample_with_mem(env_name: str, archive_df=None, ldm=None, autoencoder=None, N: int = 100,
-                           image_path: str = None, suffix: str = None, ignore_first: bool = False, sampler=None,
-                           scale_factor=None, clip_obs_rew: bool = False,
+def evaluate_vae_subsample_with_mem(env_name: str, archive_df=None, autoencoder=None, N: int = 100,
+                           image_path: str = None, suffix: str = None, ignore_first: bool = False, clip_obs_rew: bool = False,
                             normalize_obs: bool = False,
                             uniform_sampling: bool = False,
                             center_data: bool = False,
-                            latent_shape = None,
                             weight_normalizer = None,
                             cut_out: bool = False,
                             average: bool = False,):
@@ -437,13 +274,9 @@ def evaluate_ldm_subsample_with_mem(env_name: str, archive_df=None, ldm=None, au
                                                               original_archive,
                                                               reconstructed_agents=True,
                                                               vae=autoencoder,
-                                                              sampler=sampler,
-                                                              scale_factor=scale_factor,
-                                                              diffusion_model=ldm,
                                                               center_data=center_data,
                                                               uniform_sampling=uniform_sampling,
                                                               weight_normalizer=weight_normalizer,
-                                                              latent_shape = latent_shape,
                                                               average=average,
                                                               )
     # reconstructed_results = {
@@ -474,14 +307,14 @@ obsnorm_hid=64
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 train_batch_size = 32
 
-existing_experiments_dict_path = f"{final_results_folder}/paper_results/{env}/diffusion_model/experiments_dict.json"
+existing_experiments_dict_path = f"{final_results_folder}/paper_results/{env}/autoencoder/experiments_dict.json"
 if os.path.exists(existing_experiments_dict_path):
     with open(existing_experiments_dict_path, 'rb') as f:
         experiments_dict = json.load(f)
-        
+
 experiments_dict_cpy = copy.deepcopy(experiments_dict)
 (env_ind, env_experiments_dict) = [(ind,env_dict) for ind,env_dict in enumerate(experiments_dict['results']) if env_dict['env'] == env][0]
-
+        
 obs_dim, action_shape = shared_params[env]['obs_dim'], np.array([shared_params[env]['action_dim']])
 
 timesteps = 600
@@ -491,6 +324,9 @@ for exp_ind, experiment in enumerate(env_experiments_dict['experiments_dict_list
     centering = experiment["centering"]
     ghn_hid = experiment["ghn_size"]
     for folder_ind, folder in enumerate(experiment["folders"]):
+        if "Measure_Error_Mean" in folder.keys():
+            print(f"Skipping {folder}")
+            continue
 
         seed = folder["seed"]
         name = folder["name"]
@@ -499,24 +335,9 @@ for exp_ind, experiment in enumerate(env_experiments_dict['experiments_dict_list
         np.random.seed(seed)
         torch.manual_seed(seed)
         
-        args_json_file = f"{final_results_folder}/paper_results/{env}/diffusion_model/{name}/args.json"
+        args_json_file = f"{final_results_folder}/paper_results/{env}/autoencoder/{name}/args.json"
         with open(args_json_file, 'r') as f:
             args = json.load(f)
-
-        model = ConditionalUNet(
-            in_channels=latent_channels,
-            out_channels=latent_channels,
-            channels=64,
-            n_res_blocks=1,
-            attention_levels=[],
-            channel_multipliers=[1, 2, 4],
-            n_heads=4,
-            d_cond=256,
-            logvar=logvar
-        )
-        model_path = f"{final_results_folder}/{args['model_checkpoint_folder']}/{name}.pt"
-        model.load_state_dict(torch.load(model_path))
-        model.to(device)
 
         autoencoder = AutoEncoder(emb_channels=emb_channels,
             z_channels=z_channels,
@@ -526,67 +347,44 @@ for exp_ind, experiment in enumerate(env_experiments_dict['experiments_dict_list
             ghn_hid=ghn_hid,
             enc_fc_hid = enc_fc_hid,
             obsnorm_hid=obsnorm_hid,
+            conditional = True
         )     
-        autoencoder_path = f"{final_results_folder}/{args['autoencoder_cp_path']}"
+        autoencoder_path = f"{final_results_folder}/{args['model_checkpoint_folder']}/{name}.pt"
         autoencoder.load_state_dict(torch.load(autoencoder_path))
         autoencoder.to(device)
         
-        betas = cosine_beta_schedule(timesteps)
-        gauss_diff = LatentDiffusion(betas, num_timesteps=timesteps, device=device)
-        sampler = DDIMSampler(gauss_diff, n_steps=100)
-
-        # print size of models
-        print(f"\nGHN size: {ghn_hid}")
-        print(f"Unet size: {sum(p.numel() for p in model.parameters())}")
-        print(f"Autoencoder decoder size: {sum(p.numel() for p in autoencoder.decoder.parameters())}")
-        print(f"total size: {sum(p.numel() for p in model.parameters()) + sum(p.numel() for p in autoencoder.decoder.parameters())}")
-
-        if "Measure_Error_Mean" in folder.keys():
-            print(f"Skipping {folder}")
-            continue
-
+    
         weight_normalizer = None
-        train_dataloader, train_archive, weight_normalizer = shaped_elites_dataset_factory(
+        _, train_archive, weight_normalizer = shaped_elites_dataset_factory(
             env, batch_size=train_batch_size, is_eval=False,
             center_data=centering,
             use_language=False,
             weight_normalizer=weight_normalizer)
   
-        gt_params_batch, measures = next(iter(train_dataloader))
-        with torch.no_grad():
-            batch = autoencoder.encode(gt_params_batch).sample().detach()
-            # rescale the embeddings to be unit variance
-            std = batch.flatten().std()
-            scale_factor = 1. / std
-            scale_factor = scale_factor.item()
-            
+
         dataset_kwargs = {
             'center_data': centering,
             'weight_normalizer': weight_normalizer
         }
 
-        Measure_Error_Mean, Archive_Measure_Error_Mean = evaluate_ldm_subsample_with_mem(env_name=env,
+        Measure_Error_Mean, Archive_Measure_Error_Mean = evaluate_vae_subsample_with_mem(env_name=env,
             archive_df=train_archive[0],
-            ldm=model,
             autoencoder=autoencoder,
             N=5000,
             image_path = None,
             # suffix = str(epoch),
             ignore_first=True,
-            sampler=sampler,
-            scale_factor=scale_factor,
             normalize_obs=True,
             clip_obs_rew=True,
             uniform_sampling = False,
             cut_out=False,
             average=True,
-            latent_shape = (z_channels, z_height, z_height),
             **dataset_kwargs
         )
 
         print(f"Measure_Error_Mean: {Measure_Error_Mean}")
         experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Measure_Error_Mean'] = Measure_Error_Mean
         experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_Measure_Error_Mean'] = Archive_Measure_Error_Mean
-
-        with open(f"{final_results_folder}/paper_results/{env}/diffusion_model/experiments_dict.json", 'w') as f:
+        del train_archive
+        with open(f"{final_results_folder}/paper_results/{env}/autoencoder/experiments_dict.json", 'w') as f:
             json.dump(experiments_dict_cpy, f, indent=4)
