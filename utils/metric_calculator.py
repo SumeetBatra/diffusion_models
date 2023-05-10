@@ -1,25 +1,3 @@
-# import json
-# from os import listdir
-# import pandas as pd
-# from os.path import isfile, join, isdir
-
-# results_folder = "/home/shashank/research/qd/paper_results"
-
-# # create an empty dataframe
-# df = pd.DataFrame(columns=["env", "model", "seed", "ghn_size", "centering", "folder", "args_file", "model_ckpt"])
-
-# # get folder names in results folder
-# envs = [f for f in listdir(results_folder) if isdir(join(results_folder, f))]
-
-# for env in envs:
-#     env_folder = join(results_folder, env)
-#     # get folders in env folder
-#     runs = [f for f in listdir(env_folder) if isdir(join(env_folder, f))]
-#     for run in runs:
-#         run_folder = join(env_folder, run)
-#         args_file = join(run_folder, "args.json")
-#         model_ckpt = join(run_folder, "model_checkpoints", f"{run}.pt")
-
 from models.cond_unet import ConditionalUNet
 from autoencoders.policy.hypernet import HypernetAutoEncoder as AutoEncoder
 import torch
@@ -53,6 +31,7 @@ experiments_dict = {
                 {
                     "centering": True,
                     "ghn_size": 8,
+                    "kl": 1e-6,
                     "folders": [
                         {
                             "seed": 111,
@@ -77,6 +56,7 @@ experiments_dict = {
                 {
                     "centering": False,
                     "ghn_size": 8,
+                    "kl": 1e-6,
                     "folders": [
                         {
                             "seed": 111,
@@ -101,6 +81,7 @@ experiments_dict = {
                 {
                     "centering": True,
                     "ghn_size": 16,
+                    "kl": 1e-6,
                     "folders": [
                         {
                             "seed": 111,
@@ -125,6 +106,7 @@ experiments_dict = {
                 {
                     "centering": False,
                     "ghn_size": 16,
+                    "kl": 1e-6,
                     "folders": [
                         {
                             "seed": 111,
@@ -149,6 +131,7 @@ experiments_dict = {
                 {
                     "centering": True,
                     "ghn_size": 32,
+                    "kl": 1e-6,
                     "folders": [
                         {
                             "seed": 111,
@@ -173,6 +156,7 @@ experiments_dict = {
                 {
                     "centering": False,
                     "ghn_size": 32,
+                    "kl": 1e-6,
                     "folders": [
                         {
                             "seed": 111,
@@ -193,6 +177,32 @@ experiments_dict = {
                     ],
 
                 },
+
+                # higher KL
+                {
+                    "centering": True,
+                    "ghn_size": 16,
+                    "kl": 1e-2,
+                    "folders": [
+                        {
+                            "seed": 111,
+                            "name": "humanoid_diffusion_model_20230509-040115_111"
+                        },
+                        # {
+                        #     "seed": 222,
+                        #     "name": "humanoid_diffusion_model_20230505-072152_222"
+                        # },
+                        {
+                            "seed": 333,
+                            "name": "humanoid_diffusion_model_20230509-041637_333"
+                        },
+                        {
+                            "seed": 444,
+                            "name": "humanoid_diffusion_model_20230509-044508_444"
+                        }
+                    ],
+
+                },
             ]
         },
         {
@@ -201,6 +211,7 @@ experiments_dict = {
                 {
                     "centering": True,
                     "ghn_size": 8,
+                    "kl": 1e-6,
                     "folders": [
                         {
                             "seed": 111,
@@ -225,6 +236,7 @@ experiments_dict = {
                 {
                     "centering": False,
                     "ghn_size": 8,
+                    "kl": 1e-6,
                     "folders": [
                         {
                             "seed": 111,
@@ -484,6 +496,7 @@ for exp_ind, experiment in enumerate(env_experiments_dict['experiments_dict_list
     ghn_hid = experiment["ghn_size"]
     for folder_ind, folder in enumerate(experiment["folders"]):
         if "Measure_Error_Mean" in folder.keys():
+            print(f"Skipping {folder}")
             continue
 
         seed = folder["seed"]
