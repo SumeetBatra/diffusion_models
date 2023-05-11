@@ -246,10 +246,10 @@ class LangConditionalUNet(ConditionalUNet):
     def forward(self, x: torch.Tensor, time_steps: torch.Tensor, cond: Optional[torch.Tensor] = None, cond_text: Optional[List[str]] = None):
         x_input_block = []
         t_emb = self.time_embed(time_steps)
-        if cond is None:
-            assert cond_text is not None
-            cond = self.text_to_cond(cond_text)
-        cond = cond[:, None, :]
+        if cond is not None or cond_text is not None:
+            if cond is None:
+                cond = self.text_to_cond(cond_text)
+            cond = cond[:, None, :]
 
         for module in self.input_blocks:
             x = module(x, t_emb, cond)
