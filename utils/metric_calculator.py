@@ -201,7 +201,6 @@ experiments_dict = {
                             "name": "humanoid_diffusion_model_20230509-044508_444"
                         }
                     ],
-
                 },
             ]
         },
@@ -335,7 +334,7 @@ def reevaluate_ppga_archive_mem(env_cfg: AttrDict,
             del vec_env
             env_cfg.env_batch_size = len(agent_batch) * envs_per_agent
             vec_env = make_vec_env_brax(env_cfg)
-        print(f'Evaluating solution batch {i}')
+        # print(f'Evaluating solution batch {i}')
         vec_inference = VectorizedActor(agent_batch, Actor, obs_shape=obs_shape, action_shape=action_shape,
                                         normalize_obs=normalize_obs, normalize_returns=normalize_returns,
                                         deterministic=True).to(device)
@@ -354,23 +353,23 @@ def reevaluate_ppga_archive_mem(env_cfg: AttrDict,
     # Measure_Error_Mean is the 2 norm of the difference between the true measure and the estimated measure
     Measure_Error_Mean = np.linalg.norm(true_measures - all_measures, axis=1).mean()
 
-    # # create a new archive
-    # archive_dims = [env_cfg.grid_size] * env_cfg.num_dims
-    # bounds = [(0., 1.0) for _ in range(env_cfg.num_dims)]
-    # new_archive = GridArchive(solution_dim=1,
-    #                           dims=archive_dims,
-    #                           ranges=bounds,
-    #                           threshold_min=-10000,
-    #                           seed=env_cfg.seed,
-    #                           qd_offset=reward_offset[env_cfg.env_name])
-    # all_objs[np.isnan(all_objs)] = 0
-    # # add the re-evaluated solutions to the new archive
-    # new_archive.add(
-    #     np.ones((len(all_objs), 1)),
-    #     all_objs,
-    #     all_measures,
-    #     all_metadata
-    # )
+    # create a new archive
+    archive_dims = [env_cfg.grid_size] * env_cfg.num_dims
+    bounds = [(0., 1.0) for _ in range(env_cfg.num_dims)]
+    new_archive = GridArchive(solution_dim=1,
+                              dims=archive_dims,
+                              ranges=bounds,
+                              threshold_min=-10000,
+                              seed=env_cfg.seed,
+                              qd_offset=reward_offset[env_cfg.env_name])
+    all_objs[np.isnan(all_objs)] = 0
+    # add the re-evaluated solutions to the new archive
+    new_archive.add(
+        np.ones((len(all_objs), 1)),
+        all_objs,
+        all_measures,
+        all_metadata
+    )
     # print(f'Coverage: {new_archive.stats.coverage} \n'
     #       f'Max fitness: {new_archive.stats.obj_max} \n'
     #       f'Avg Fitness: {new_archive.stats.obj_mean} \n'
@@ -381,7 +380,13 @@ def reevaluate_ppga_archive_mem(env_cfg: AttrDict,
     #     with open(archive_fp, 'wb') as f:
     #         pickle.dump(new_archive, f)
 
-    return Measure_Error_Mean
+    return {
+        "Measure_Error_Mean":Measure_Error_Mean, 
+        "Coverage":new_archive.stats.coverage, 
+        "Max_Fitness":new_archive.stats.obj_max,
+        "Avg_Fitness":new_archive.stats.obj_mean,
+        "QD_Score":new_archive.offset_qd_score
+    }
 
 
 def evaluate_ldm_subsample_with_mem(env_name: str, archive_df=None, ldm=None, autoencoder=None, N: int = 100,
@@ -421,17 +426,18 @@ def evaluate_ldm_subsample_with_mem(env_name: str, archive_df=None, ldm=None, au
                                              qd_offset=reward_offset[env_name])
 
     normalize_obs, normalize_returns = True, False
-    Archive_Measure_Error_Mean = 0
+    archive_info = None
     if not ignore_first:
         print('Re-evaluated Original Archive')
-        Archive_Measure_Error_Mean = reevaluate_ppga_archive_mem(env_cfg,
+        archive_info = reevaluate_ppga_archive_mem(env_cfg,
                                                                normalize_obs,
                                                                normalize_returns,
                                                                original_archive,
                                                                average=average)
+        # Archive_Measure_Error_Mean = archive_info['Measure_Error_Mean']
 
     print('Re-evaluated Reconstructed Archive')
-    Measure_Error_Mean = reevaluate_ppga_archive_mem(env_cfg,
+    recon_info = reevaluate_ppga_archive_mem(env_cfg,
                                                               normalize_obs,
                                                               normalize_returns,
                                                               original_archive,
@@ -446,6 +452,7 @@ def evaluate_ldm_subsample_with_mem(env_name: str, archive_df=None, ldm=None, au
                                                               latent_shape = latent_shape,
                                                               average=average,
                                                               )
+    # Measure_Error_Mean = recon_info['Measure_Error_Mean']
     # reconstructed_results = {
     #     'Coverage': reconstructed_evaluated_archive.stats.coverage,
     #     'Max_fitness': reconstructed_evaluated_archive.stats.obj_max,
@@ -457,13 +464,16 @@ def evaluate_ldm_subsample_with_mem(env_name: str, archive_df=None, ldm=None, au
     #     'Reconstructed': reconstructed_results,
     # }
 
-    return Measure_Error_Mean, Archive_Measure_Error_Mean
+    return recon_info, archive_info
 
 
 
 
 final_results_folder = "/home/shashank/research/qd"
 env = "humanoid"
+continue_from_previous = False
+
+
 latent_channels = 4
 emb_channels=4
 z_height=4
@@ -473,6 +483,7 @@ obsnorm_hid=64
 # archive_data_path="data/humanoid/archive100x100.pkl"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 train_batch_size = 32
+
 
 existing_experiments_dict_path = f"{final_results_folder}/paper_results/{env}/diffusion_model/experiments_dict.json"
 if os.path.exists(existing_experiments_dict_path):
@@ -541,7 +552,7 @@ for exp_ind, experiment in enumerate(env_experiments_dict['experiments_dict_list
         print(f"Autoencoder decoder size: {sum(p.numel() for p in autoencoder.decoder.parameters())}")
         print(f"total size: {sum(p.numel() for p in model.parameters()) + sum(p.numel() for p in autoencoder.decoder.parameters())}")
 
-        if "Measure_Error_Mean" in folder.keys():
+        if "Measure_Error_Mean" in folder.keys() and continue_from_previous:
             print(f"Skipping {folder}")
             continue
 
@@ -565,7 +576,7 @@ for exp_ind, experiment in enumerate(env_experiments_dict['experiments_dict_list
             'weight_normalizer': weight_normalizer
         }
 
-        Measure_Error_Mean, Archive_Measure_Error_Mean = evaluate_ldm_subsample_with_mem(env_name=env,
+        recon_info, archive_info = evaluate_ldm_subsample_with_mem(env_name=env,
             archive_df=train_archive[0],
             ldm=model,
             autoencoder=autoencoder,
@@ -584,9 +595,32 @@ for exp_ind, experiment in enumerate(env_experiments_dict['experiments_dict_list
             **dataset_kwargs
         )
 
+        Measure_Error_Mean = recon_info['Measure_Error_Mean']
+        Recon_Coverage = recon_info['Coverage']
+        Recon_Avg_Fitness = recon_info['Avg_Fitness']
+        Recon_QD_Score = recon_info['QD_Score']
         print(f"Measure_Error_Mean: {Measure_Error_Mean}")
+
         experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Measure_Error_Mean'] = Measure_Error_Mean
-        experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_Measure_Error_Mean'] = Archive_Measure_Error_Mean
+        experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Recon_Coverage'] = Recon_Coverage
+        experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Recon_Avg_Fitness'] = Recon_Avg_Fitness
+        experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Recon_QD_Score'] = Recon_QD_Score
+        
+
+        if archive_info is not None:
+            Archive_Coverage = archive_info['Coverage']
+            Archive_Measure_Error_Mean = archive_info['Measure_Error_Mean']
+            Archive_Avg_Fitness = archive_info['Avg_Fitness']
+            Archive_QD_Score = archive_info['QD_Score']
+
+            experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_Measure_Error_Mean'] = Archive_Measure_Error_Mean
+            experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_Coverage'] = Archive_Coverage
+            experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_Avg_Fitness'] = Archive_Avg_Fitness
+            experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_QD_Score'] = Archive_QD_Score
+
+
+
+
 
         with open(f"{final_results_folder}/paper_results/{env}/diffusion_model/experiments_dict.json", 'w') as f:
             json.dump(experiments_dict_cpy, f, indent=4)

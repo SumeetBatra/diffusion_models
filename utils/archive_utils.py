@@ -281,7 +281,7 @@ def reevaluate_ppga_archive(env_cfg: AttrDict,
             del vec_env
             env_cfg.env_batch_size = len(agent_batch) * envs_per_agent
             vec_env = make_vec_env_brax(env_cfg)
-        print(f'Evaluating solution batch {i}')
+        # print(f'Evaluating solution batch {i}')
         vec_inference = VectorizedActor(agent_batch, Actor, obs_shape=obs_shape, action_shape=action_shape,
                                         normalize_obs=normalize_obs, normalize_returns=normalize_returns,
                                         deterministic=True).to(device)
