@@ -352,7 +352,7 @@ def train(cfg):
                     })
 
                     wandb.log(info)
-                    if cfg.reevaluate_archive_vae:
+                    if cfg.reevaluate_archive_vae and image_results is not None:
                         wandb.log({'Archive/recon_image': wandb.Image(image_results['Reconstructed'], caption=f"Epoch {epoch + 1}")})
                         wandb.log({'Archive/Uniform_recon_image': wandb.Image(uniform_image_results['Reconstructed'], caption=f"Epoch {epoch + 1}")})
         epoch_simple_loss = 0
@@ -444,8 +444,9 @@ def train(cfg):
     log.debug(f"Original Archive Reevaluated Results: {subsample_results['Original']}")
 
     if cfg.use_wandb:
-        wandb.log({'Archive/recon_image_final': wandb.Image(image_results['Reconstructed'], caption=f"Final")})
-        wandb.log({'Archive/original_image': wandb.Image(image_results['Original'], caption=f"Final")})
+        if image_results is not None:
+            wandb.log({'Archive/recon_image_final': wandb.Image(image_results['Reconstructed'], caption=f"Final")})
+            wandb.log({'Archive/original_image': wandb.Image(image_results['Original'], caption=f"Final")})
 
         wandb.log({'Archive/original_' + key : val for key, val in subsample_results['Original'].items()})
 

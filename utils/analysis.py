@@ -210,6 +210,7 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
         'Reconstructed': reconstructed_results,
     }
 
+    image_results = None
     if env_cfg.num_dims == 2 and image_path is not None:
         if not os.path.exists(image_path):
             os.makedirs(image_path)
@@ -219,10 +220,10 @@ def evaluate_ldm_subsample(env_name: str, archive_df=None, ldm=None, autoencoder
         recon_image_array = save_heatmap(reconstructed_evaluated_archive,
                                          os.path.join(image_path, f"reconstructed_archive_{suffix}.png"))
 
-    image_results = {
-        'Original': orig_image_array if not ignore_first else None,
-        'Reconstructed': recon_image_array,
-    }
+        image_results = {
+            'Original': orig_image_array if not ignore_first else None,
+            'Reconstructed': recon_image_array,
+        }
     return results, image_results
 
 
