@@ -5,7 +5,12 @@ import pickle
 import os
 import json
 import matplotlib.pyplot as plt
+import wandb
+import pandas as pd
+import seaborn as sns
+import scienceplots
 
+from pathlib import Path
 from attrdict import AttrDict
 from autoencoders.policy.hypernet import HypernetAutoEncoder as VAE
 from collections import OrderedDict
@@ -21,6 +26,11 @@ from diffusion.ddim import DDIMSampler
 from RL.actor_critic import Actor
 from RL.vectorized import VectorizedActor
 from envs.brax_custom.brax_env import make_vec_env_brax
+from collections import OrderedDict
+
+api = wandb.Api()
+
+plt.style.use('science')
 
 
 def evaluate_vae_subsample(env_name: str, archive_df=None, model=None, N: int = 100, image_path: str = None,
@@ -401,6 +411,67 @@ def evaluate_measure_distance_cvt():
     print(f'{measure_mse=}, {js_div=}')
 
 
+def get_results_dataframe(env_name: str, keywords: list[str], name=None):
+    runs = api.runs('qdrl/policy_diffusion', filters={
+        "$and": [{'tags': 'final_diffusion_2'}]
+    })
+
+    keys = ['Behavior/js_div', 'Behavior/reward_ratio', 'epoch']
+
+    hist_list = []
+    cache_dir = Path('./.cache')
+    cache_dir.mkdir(exist_ok=True)
+    for run in runs:
+        res = all([key in run.name for key in keywords])
+        if res:
+            cached_data_path = cache_dir.joinpath(Path(f'{run.storage_id}.csv'))
+            if cached_data_path.exists():
+                print(f'Loading cached data for run {run.name}')
+                hist = pd.read_csv(str(cached_data_path))
+            else:
+                # this takes a long time
+                hist = pd.DataFrame(
+                    run.scan_history(keys=keys))
+                # use this for debugging/tweaking the figure
+                # hist = run.history(keys=keys)
+                hist.to_csv(str(cached_data_path))
+
+            hist['env_name'] = env_name
+            hist_list.append(hist)
+
+    df = pd.concat(hist_list, ignore_index=True)
+    return df
+
+
+def plot_reward_ratio_and_js_div():
+    envs = OrderedDict({'humanoid': ['humanoid_centering'],
+            'walker2d': ['walker2d_no_centering'],
+            'halfcheetah': ['halfcheetah_no_centering'],
+            'ant': ['ant_centering']})
+    fig, axs = plt.subplots(2, 4, figsize=(12, 4))
+
+    for i, (env, keywords) in enumerate(envs.items()):
+        df = get_results_dataframe(env, keywords)
+        sns.lineplot(x='epoch', y='Behavior/reward_ratio', errorbar='sd', data=df, ax=axs[0][i])
+        sns.lineplot(x='epoch', y='Behavior/js_div', errorbar='sd', data=df, ax=axs[1][i])
+        axs[0][i].set_ylim(0, 1.2)
+        axs[0][i].set_xlim(0, 200)
+        axs[1][i].set_xlim(0, 200)
+        axs[0][i].set(xlabel=None)
+        axs[0][i].set(ylabel=None)
+        axs[1][i].set(ylabel=None)
+
+    env_names = list(envs.keys())
+    for i, ax in enumerate(axs[0][:]):
+        ax.set_title(env_names[i])
+
+    axs[0][0].set_ylabel("Reward Ratio")
+    axs[1][0].set_ylabel("JS Divergence")
+    axs[1][1].set_ylim(0, 1.0)
+    fig.tight_layout()
+    plt.show()
+
+
 if __name__ == '__main__':
     archive_df_path = '/home/sumeet/QDPPO/experiments/ppga_halfcheetah_adaptive_stddev_no_obs_norm/1111/checkpoints/' \
                       'cp_00001990/archive_df_00001990.pkl'
@@ -410,4 +481,4 @@ if __name__ == '__main__':
     env_name = 'halfcheetah'
 
     # evaluate_vae_subsample(env_name, archive_df_path, model_path)
-    evaluate_measure_distance_cvt()
+    plot_reward_ratio_and_js_div()
