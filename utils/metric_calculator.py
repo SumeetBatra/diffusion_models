@@ -22,8 +22,10 @@ from models.vectorized import VectorizedActor
 import os
 import copy
 import random
+import matplotlib.pyplot as plt
+import pandas as pd
 
-experiments_dict = {
+experiments_dict_old = {
     "results": [
         {
             "env": "humanoid",
@@ -257,10 +259,310 @@ experiments_dict = {
 
                 },
             ]
-        }
+        },
+        {
+            "env": "ant",
+            "experiments_dict_list" : [
+                {
+                    "centering": True,
+                    "ghn_size": 8,
+                    "kl": 1e-6,
+                    "folders": [
+                        {
+                            "seed": 111,
+                            "name": "ant_diffusion_model_20230511-123612_111"
+                        },
+                        {
+                            "seed": 222,
+                            "name": "ant_diffusion_model_20230511-142040_222"
+                        },
+                        {
+                            "seed": 333,
+                            "name": "ant_diffusion_model_20230511-142040_333"
+                        },
+                        {
+                            "seed": 444,
+                            "name": "ant_diffusion_model_20230511-142040_444"
+                        }
+                    ],
+
+                },
+
+                {
+                    "centering": False,
+                    "ghn_size": 8,
+                    "kl": 1e-6,
+                    "folders": [
+                        {
+                            "seed": 111,
+                            "name": "ant_diffusion_model_20230511-142100_111"
+                        },
+                        {
+                            "seed": 222,
+                            "name": "ant_diffusion_model_20230511-155513_222"
+                        },
+                        {
+                            "seed": 333,
+                            "name": "ant_diffusion_model_20230511-155513_333"
+                        },
+                        {
+                            "seed": 444,
+                            "name": "ant_diffusion_model_20230511-155513_444"
+                        }
+                    ],
+
+                },
+            ]
+        },
+        {
+            "env": "halfcheetah",
+            "experiments_dict_list" : [
+                {
+                    "centering": True,
+                    "ghn_size": 8,
+                    "kl": 1e-6,
+                    "folders": [
+                        {
+                            "seed": 111,
+                            "name": "halfcheetah_diffusion_model_20230507-112809_111"
+                        },
+                        {
+                            "seed": 222,
+                            "name": "halfcheetah_diffusion_model_20230507-112821_222"
+                        },
+                        {
+                            "seed": 333,
+                            "name": "halfcheetah_diffusion_model_20230507-112831_333"
+                        },
+                        {
+                            "seed": 444,
+                            "name": "halfcheetah_diffusion_model_20230507-142738_444"
+                        }
+                    ],
+
+                },
+
+                {
+                    "centering": False,
+                    "ghn_size": 8,
+                    "kl": 1e-6,
+                    "folders": [
+                        {
+                            "seed": 111,
+                            "name": "halfcheetah_diffusion_model_20230507-150758_111"
+                        },
+                        {
+                            "seed": 222,
+                            "name": "halfcheetah_diffusion_model_20230507-151258_222"
+                        },
+                        {
+                            "seed": 333,
+                            "name": "halfcheetah_diffusion_model_20230507-151258_333"
+                        },
+                        {
+                            "seed": 444,
+                            "name": "halfcheetah_diffusion_model_20230507-151301_444"
+                        }
+                    ],
+
+                },
+            ]
+        }        
     ]
 }
 
+
+experiments_dict = {
+    "results": [
+        {
+            "env": "walker2d",
+            "experiments_dict_list" : [
+                {
+                    "centering": False,
+                    "ghn_size": 16,
+                    "kl": 1e-6,
+                    "folders": [
+                        {
+                            "seed": 111,
+                            "name": "walker2d_diffusion_model_20230513-155129_111"
+                        },
+                        {
+                            "seed": 222,
+                            "name": "walker2d_diffusion_model_20230513-155141_222"
+                        },
+                        {
+                            "seed": 333,
+                            "name": "walker2d_diffusion_model_20230513-155155_333"
+                        },
+                        {
+                            "seed": 444,
+                            "name": "walker2d_diffusion_model_20230513-155207_444"
+                        }
+                    ],
+
+                },
+            ]
+        },
+        {
+            "env": "ant",
+            "experiments_dict_list" : [
+                {
+                    "centering": False,
+                    "ghn_size": 16,
+                    "kl": 1e-6,
+                    "folders": [
+                        {
+                            "seed": 111,
+                            "name": "ant_diffusion_model_20230513-155615_111"
+                        },
+                        {
+                            "seed": 222,
+                            "name": "ant_diffusion_model_20230513-155615_222"
+                        },
+                        {
+                            "seed": 333,
+                            "name": "ant_diffusion_model_20230513-155615_333"
+                        },
+                        {
+                            "seed": 444,
+                            "name": "ant_diffusion_model_20230513-160543_444"
+                        }
+                    ],
+
+                },
+            ]
+        },
+        {
+            "env": "halfcheetah",
+            "experiments_dict_list" : [
+                {
+                    "centering": False,
+                    "ghn_size": 16,
+                    "kl": 1e-6,
+                    "folders": [
+                        {
+                            "seed": 111,
+                            "name": "halfcheetah_diffusion_model_20230513-155047_111"
+                        },
+                        # {
+                        #     "seed": 222,
+                        #     "name": "halfcheetah_diffusion_model_20230507-151258_222"
+                        # },
+                        {
+                            "seed": 333,
+                            "name": "halfcheetah_diffusion_model_20230513-155059_333"
+                        },
+                        {
+                            "seed": 444,
+                            "name": "halfcheetah_diffusion_model_20230513-155106_444"
+                        }
+                    ],
+
+                },
+            ]
+        }        
+    ]
+}
+
+def make_cdf_plot(cfg, data: pd.DataFrame, ax: plt.axis, standalone: bool = False, **kwargs):
+    plt.rcParams["pdf.fonttype"] = 42
+    plt.rcParams["ps.fonttype"] = 42
+
+    y_label = "Archive CDF"
+
+    # Color mapping for algorithms
+    palette = {
+        "CMA-MAE": "C0",
+        "CMA-ME": "C1",
+        "MAP-Elites (line)": "C2",
+        "MAP-Elites": "C3",
+    }
+
+    x = data['Objective'].to_numpy().flatten()
+    y_avg = data.filter(regex='Mean').to_numpy().flatten()
+    y_min = data.filter(regex='Min').to_numpy().flatten()
+    y_max = data.filter(regex='Max').to_numpy().flatten()
+    ax.plot(x, y_avg, linewidth=1.0, label=cfg.algorithm, **kwargs)
+    ax.fill_between(x, y_min, y_max, alpha=0.2)
+    ax.set_xlim(cfg.objective_range)
+    ax.set_yticks(np.arange(0, 101, 25.0))
+    ax.set_xlabel("Objective")
+    if standalone:
+        ax.set_ylabel(y_label)
+        ax.set_title(cfg.title)
+        ax.legend()
+
+def compile_cdf(cfg, dataframes=None):
+    num_cells = cfg.archive_resolution
+
+    if not dataframes:
+        df_dir = cfg.archive_dir
+        filenames = next(os.walk(df_dir), (None, None, []))[2]  # [] if no file
+        dataframes = []
+        for f in filenames:
+            full_path = os.path.join(df_dir, f)
+            df = pd.read_pickle(full_path)
+            dataframes.append(df)
+
+    x = np.linspace(cfg.objective_range[0], cfg.objective_range[1], cfg.objective_resolution)
+    all_y_vals = []
+    for df in dataframes:
+        y_vals = []
+        df_cells = np.array(sorted(df['objective']))
+        for x_val in x:
+            count = len(df_cells[df_cells > x_val])
+            percentage = (count / num_cells) * 100.0
+            y_vals.append(percentage)
+        all_y_vals.append(np.array(y_vals))
+
+    all_y_vals = np.vstack(all_y_vals)
+    mean, stddev = np.mean(all_y_vals, axis=0), np.std(all_y_vals, axis=0)
+
+    all_data = np.vstack((x, mean, mean - stddev, mean + stddev))
+    cdf = pd.DataFrame(all_data.T, columns=['Objective',
+                                            'Threshold Percentage (Mean)',
+                                            'Threshold Percentage (Min)',
+                                            'Threshold Percentage (Max)'])
+
+    return cdf
+
+def index_of(env_name):
+    return list(shared_params.keys()).index(env_name)
+
+
+def plot_cdf_data(algo_dataframes: list, alg_data_dirs: dict, archive_type: str, reevaluated_archives=False, axs=None, **kwargs):
+    '''
+    :param algorithm: name of the algorithm
+    :param alg_data_dirs: contains env: path string-string pairs for all envs for this algorithm
+    :param archive_type: either pyribs or qdax depending on which repo produced the archive
+    :param reevaluated_archives: whether to plot corrected QD metrics or not
+    :param axs: matplotlib axes objects
+    '''
+    algorithm = "policy_diffusion"
+    standalone_plot = False
+    if axs is None:
+        standalone_plot = True
+        fig, axs = plt.subplots(2, 2, figsize=(8, 6))
+    subtitle = 'Archive CDFs'
+    prefix = 'Corrected ' if reevaluated_archives else ''
+    title = prefix + subtitle
+
+    for i, (exp_name, env_dir) in enumerate(alg_data_dirs.items()):
+        base_cfg = AttrDict(shared_params[exp_name])
+        base_cfg['title'] = exp_name
+
+        cfg = copy.copy(base_cfg)
+        cfg.update({'archive_dir': env_dir, 'algorithm': algorithm})
+        # dataframe_fn = get_ppga_df if archive_type == 'pyribs' else get_pgame_df
+        # algo_dataframes = dataframe_fn(env_dir, reevaluated_archives)
+        algo_cdf = compile_cdf(cfg, dataframes=algo_dataframes)
+
+        if standalone_plot:
+            (j, k) = np.unravel_index(i, (2, 2))  # b/c there are 4 envs
+            make_cdf_plot(cfg, algo_cdf, axs[j][k])
+        else:
+            env_idx = index_of(exp_name)
+            make_cdf_plot(cfg, algo_cdf, axs[3][env_idx])
 
 
 def reevaluate_ppga_archive_mem(env_cfg: AttrDict,
@@ -379,13 +681,15 @@ def reevaluate_ppga_archive_mem(env_cfg: AttrDict,
     #     archive_fp = os.path.join(save_path, f'{env_cfg.env_name}_reeval_archive.pkl')
     #     with open(archive_fp, 'wb') as f:
     #         pickle.dump(new_archive, f)
+    archive_df = new_archive.as_pandas(include_solutions=True)
 
     return {
         "Measure_Error_Mean":Measure_Error_Mean, 
         "Coverage":new_archive.stats.coverage, 
         "Max_Fitness":new_archive.stats.obj_max,
         "Avg_Fitness":new_archive.stats.obj_mean,
-        "QD_Score":new_archive.offset_qd_score
+        "QD_Score":new_archive.offset_qd_score,
+        "Archive":new_archive.as_pandas(include_solutions=False)
     }
 
 
@@ -438,20 +742,20 @@ def evaluate_ldm_subsample_with_mem(env_name: str, archive_df=None, ldm=None, au
 
     print('Re-evaluated Reconstructed Archive')
     recon_info = reevaluate_ppga_archive_mem(env_cfg,
-                                                              normalize_obs,
-                                                              normalize_returns,
-                                                              original_archive,
-                                                              reconstructed_agents=True,
-                                                              vae=autoencoder,
-                                                              sampler=sampler,
-                                                              scale_factor=scale_factor,
-                                                              diffusion_model=ldm,
-                                                              center_data=center_data,
-                                                              uniform_sampling=uniform_sampling,
-                                                              weight_normalizer=weight_normalizer,
-                                                              latent_shape = latent_shape,
-                                                              average=average,
-                                                              )
+                                            normalize_obs,
+                                            normalize_returns,
+                                            original_archive,
+                                            reconstructed_agents=True,
+                                            vae=autoencoder,
+                                            sampler=sampler,
+                                            scale_factor=scale_factor,
+                                            diffusion_model=ldm,
+                                            center_data=center_data,
+                                            uniform_sampling=uniform_sampling,
+                                            weight_normalizer=weight_normalizer,
+                                            latent_shape = latent_shape,
+                                            average=average,
+                                            )
     # Measure_Error_Mean = recon_info['Measure_Error_Mean']
     # reconstructed_results = {
     #     'Coverage': reconstructed_evaluated_archive.stats.coverage,
@@ -470,7 +774,8 @@ def evaluate_ldm_subsample_with_mem(env_name: str, archive_df=None, ldm=None, au
 
 
 final_results_folder = "/home/shashank/research/qd"
-env = "humanoid"
+paper_results_folder = "paper_results2"
+envs = ["ant", "walker2d"] #["halfcheetah", "ant", "walker2d"]
 continue_from_previous = False
 
 
@@ -485,142 +790,161 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 train_batch_size = 32
 
 
-existing_experiments_dict_path = f"{final_results_folder}/paper_results/{env}/diffusion_model/experiments_dict.json"
-if os.path.exists(existing_experiments_dict_path):
-    with open(existing_experiments_dict_path, 'rb') as f:
-        experiments_dict = json.load(f)
-        
-experiments_dict_cpy = copy.deepcopy(experiments_dict)
-(env_ind, env_experiments_dict) = [(ind,env_dict) for ind,env_dict in enumerate(experiments_dict['results']) if env_dict['env'] == env][0]
 
-obs_dim, action_shape = shared_params[env]['obs_dim'], np.array([shared_params[env]['action_dim']])
-
-timesteps = 600
-logvar = torch.full(fill_value=0., size=(timesteps,))
-
-for exp_ind, experiment in enumerate(env_experiments_dict['experiments_dict_list']):
-    centering = experiment["centering"]
-    ghn_hid = experiment["ghn_size"]
-    for folder_ind, folder in enumerate(experiment["folders"]):
-
-        seed = folder["seed"]
-        name = folder["name"]
-
-        random.seed(seed)
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        
-        args_json_file = f"{final_results_folder}/paper_results/{env}/diffusion_model/{name}/args.json"
-        with open(args_json_file, 'r') as f:
-            args = json.load(f)
-
-        model = ConditionalUNet(
-            in_channels=latent_channels,
-            out_channels=latent_channels,
-            channels=64,
-            n_res_blocks=1,
-            attention_levels=[],
-            channel_multipliers=[1, 2, 4],
-            n_heads=4,
-            d_cond=256,
-            logvar=logvar
-        )
-        model_path = f"{final_results_folder}/{args['model_checkpoint_folder']}/{name}.pt"
-        model.load_state_dict(torch.load(model_path))
-        model.to(device)
-
-        autoencoder = AutoEncoder(emb_channels=emb_channels,
-            z_channels=z_channels,
-            obs_shape=obs_dim,
-            action_shape=action_shape,
-            z_height=z_height,
-            ghn_hid=ghn_hid,
-            enc_fc_hid = enc_fc_hid,
-            obsnorm_hid=obsnorm_hid,
-        )     
-        autoencoder_path = f"{final_results_folder}/{args['autoencoder_cp_path']}"
-        autoencoder.load_state_dict(torch.load(autoencoder_path))
-        autoencoder.to(device)
-        
-        betas = cosine_beta_schedule(timesteps)
-        gauss_diff = LatentDiffusion(betas, num_timesteps=timesteps, device=device)
-        sampler = DDIMSampler(gauss_diff, n_steps=100)
-
-        # print size of models
-        print(f"\nGHN size: {ghn_hid}")
-        print(f"Unet size: {sum(p.numel() for p in model.parameters())}")
-        print(f"Autoencoder decoder size: {sum(p.numel() for p in autoencoder.decoder.parameters())}")
-        print(f"total size: {sum(p.numel() for p in model.parameters()) + sum(p.numel() for p in autoencoder.decoder.parameters())}")
-
-        if "Measure_Error_Mean" in folder.keys() and continue_from_previous:
-            print(f"Skipping {folder}")
-            continue
-
-        weight_normalizer = None
-        train_dataloader, train_archive, weight_normalizer = shaped_elites_dataset_factory(
-            env, batch_size=train_batch_size, is_eval=False,
-            center_data=centering,
-            use_language=False,
-            weight_normalizer=weight_normalizer)
-  
-        gt_params_batch, measures = next(iter(train_dataloader))
-        with torch.no_grad():
-            batch = autoencoder.encode(gt_params_batch).sample().detach()
-            # rescale the embeddings to be unit variance
-            std = batch.flatten().std()
-            scale_factor = 1. / std
-            scale_factor = scale_factor.item()
+for env in envs:
+    existing_experiments_dict_path = f"{final_results_folder}/{paper_results_folder}/{env}/diffusion_model/experiments_dict.json"
+    if os.path.exists(existing_experiments_dict_path):
+        with open(existing_experiments_dict_path, 'rb') as f:
+            experiments_dict = json.load(f)
             
-        dataset_kwargs = {
-            'center_data': centering,
-            'weight_normalizer': weight_normalizer
-        }
+    experiments_dict_cpy = copy.deepcopy(experiments_dict)
+    (env_ind, env_experiments_dict) = [(ind,env_dict) for ind,env_dict in enumerate(experiments_dict['results']) if env_dict['env'] == env][0]
 
-        recon_info, archive_info = evaluate_ldm_subsample_with_mem(env_name=env,
-            archive_df=train_archive[0],
-            ldm=model,
-            autoencoder=autoencoder,
-            N=5000,
-            image_path = None,
-            # suffix = str(epoch),
-            ignore_first=True,
-            sampler=sampler,
-            scale_factor=scale_factor,
-            normalize_obs=True,
-            clip_obs_rew=True,
-            uniform_sampling = False,
-            cut_out=False,
-            average=True,
-            latent_shape = (z_channels, z_height, z_height),
-            **dataset_kwargs
-        )
+    obs_dim, action_shape = shared_params[env]['obs_dim'], np.array([shared_params[env]['action_dim']])
 
-        Measure_Error_Mean = recon_info['Measure_Error_Mean']
-        Recon_Coverage = recon_info['Coverage']
-        Recon_Avg_Fitness = recon_info['Avg_Fitness']
-        Recon_QD_Score = recon_info['QD_Score']
-        print(f"Measure_Error_Mean: {Measure_Error_Mean}")
+    timesteps = 600
+    logvar = torch.full(fill_value=0., size=(timesteps,))
 
-        experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Measure_Error_Mean'] = Measure_Error_Mean
-        experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Recon_Coverage'] = Recon_Coverage
-        experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Recon_Avg_Fitness'] = Recon_Avg_Fitness
-        experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Recon_QD_Score'] = Recon_QD_Score
+    for exp_ind, experiment in enumerate(env_experiments_dict['experiments_dict_list']):
+        centering = experiment["centering"]
+        ghn_hid = experiment["ghn_size"]
+        dataframes = []
+        for folder_ind, folder in enumerate(experiment["folders"]):
+
+            seed = folder["seed"]
+            name = folder["name"]
+
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            
+            args_json_file = f"{final_results_folder}/{paper_results_folder}/{env}/diffusion_model/{name}/args.json"
+            with open(args_json_file, 'r') as f:
+                args = json.load(f)
+
+            model = ConditionalUNet(
+                in_channels=latent_channels,
+                out_channels=latent_channels,
+                channels=64,
+                n_res_blocks=1,
+                attention_levels=[],
+                channel_multipliers=[1, 2, 4],
+                n_heads=4,
+                d_cond=256,
+                logvar=logvar,
+                measure_dim=shared_params[env]['env_cfg']['num_dims']
+            )
+            # model_path = f"{final_results_folder}/{args['model_checkpoint_folder']}/{name}.pt"
+            model_path = f"{final_results_folder}/{paper_results_folder}/{env}/diffusion_model/{name}/model_checkpoints/{name}.pt"
+            model.load_state_dict(torch.load(model_path))
+            model.to(device)
+
+            autoencoder = AutoEncoder(emb_channels=emb_channels,
+                z_channels=z_channels,
+                obs_shape=obs_dim,
+                action_shape=action_shape,
+                z_height=z_height,
+                ghn_hid=ghn_hid,
+                enc_fc_hid = enc_fc_hid,
+                obsnorm_hid=obsnorm_hid,
+            )     
+            autoencoder_path = f"{final_results_folder}/{args['autoencoder_cp_path']}"
+            autoencoder.load_state_dict(torch.load(autoencoder_path))
+            autoencoder.to(device)
+            
+            betas = cosine_beta_schedule(timesteps)
+            gauss_diff = LatentDiffusion(betas, num_timesteps=timesteps, device=device)
+            sampler = DDIMSampler(gauss_diff, n_steps=100)
+
+            # print size of models
+            print(f"\nGHN size: {ghn_hid}")
+            print(f"Unet size: {sum(p.numel() for p in model.parameters())}")
+            print(f"Autoencoder decoder size: {sum(p.numel() for p in autoencoder.decoder.parameters())}")
+            print(f"total size: {sum(p.numel() for p in model.parameters()) + sum(p.numel() for p in autoencoder.decoder.parameters())}")
+
+            if "Measure_Error_Mean" in folder.keys() and continue_from_previous:
+                print(f"Skipping {folder}")
+                continue
+
+            weight_normalizer = None
+            train_dataloader, train_archive, weight_normalizer = shaped_elites_dataset_factory(
+                env, batch_size=train_batch_size, is_eval=False,
+                center_data=centering,
+                use_language=False,
+                weight_normalizer=weight_normalizer)
+    
+            gt_params_batch, measures = next(iter(train_dataloader))
+            with torch.no_grad():
+                batch = autoencoder.encode(gt_params_batch).sample().detach()
+                # rescale the embeddings to be unit variance
+                std = batch.flatten().std()
+                scale_factor = 1. / std
+                scale_factor = scale_factor.item()
+                
+            dataset_kwargs = {
+                'center_data': centering,
+                'weight_normalizer': weight_normalizer
+            }
+
+            recon_info, archive_info = evaluate_ldm_subsample_with_mem(env_name=env,
+                archive_df=train_archive[0],
+                ldm=model,
+                autoencoder=autoencoder,
+                N=5000,
+                image_path = None,
+                # suffix = str(epoch),
+                ignore_first=True,
+                sampler=sampler,
+                scale_factor=scale_factor,
+                normalize_obs=True,
+                clip_obs_rew=True,
+                uniform_sampling = False,
+                cut_out=False,
+                average=True,
+                latent_shape = (z_channels, z_height, z_height),
+                **dataset_kwargs
+            )
+
+            Measure_Error_Mean = recon_info['Measure_Error_Mean']
+            Recon_Coverage = recon_info['Coverage']
+            Recon_Avg_Fitness = recon_info['Avg_Fitness']
+            Recon_QD_Score = recon_info['QD_Score']
+            print(f"Measure_Error_Mean: {Measure_Error_Mean}")
+
+            experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Measure_Error_Mean'] = Measure_Error_Mean
+            experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Recon_Coverage'] = Recon_Coverage
+            experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Recon_Avg_Fitness'] = Recon_Avg_Fitness
+            experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Recon_QD_Score'] = Recon_QD_Score
+            
+
+            if archive_info is not None:
+                Archive_Coverage = archive_info['Coverage']
+                Archive_Measure_Error_Mean = archive_info['Measure_Error_Mean']
+                Archive_Avg_Fitness = archive_info['Avg_Fitness']
+                Archive_QD_Score = archive_info['QD_Score']
+
+                experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_Measure_Error_Mean'] = Archive_Measure_Error_Mean
+                experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_Coverage'] = Archive_Coverage
+                experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_Avg_Fitness'] = Archive_Avg_Fitness
+                experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_QD_Score'] = Archive_QD_Score
+
+            with open(f"{final_results_folder}/{paper_results_folder}/{env}/diffusion_model/experiments_dict.json", 'w') as f:
+                json.dump(experiments_dict_cpy, f, indent=4)
+
+            dataframes.append(recon_info["Archive"])
         
+        
+        base_cfg = AttrDict(shared_params[env])
+        base_cfg['title'] = env
 
-        if archive_info is not None:
-            Archive_Coverage = archive_info['Coverage']
-            Archive_Measure_Error_Mean = archive_info['Measure_Error_Mean']
-            Archive_Avg_Fitness = archive_info['Avg_Fitness']
-            Archive_QD_Score = archive_info['QD_Score']
+        cfg = copy.copy(base_cfg)
+        cfg.update({'archive_dir': None, 'algorithm': "policy_diffusion"})
+        # dataframe_fn = get_ppga_df if archive_type == 'pyribs' else get_pgame_df
+        # algo_dataframes = dataframe_fn(env_dir, reevaluated_archives)
+        algo_cdf = compile_cdf(cfg, dataframes=dataframes)
+        env_idx = index_of(env)
+        fig, axs = plt.subplots(1, 1, figsize=(6, 6))
+        make_cdf_plot(cfg, algo_cdf, axs)
 
-            experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_Measure_Error_Mean'] = Archive_Measure_Error_Mean
-            experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_Coverage'] = Archive_Coverage
-            experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_Avg_Fitness'] = Archive_Avg_Fitness
-            experiments_dict_cpy['results'][env_ind]['experiments_dict_list'][exp_ind]['folders'][folder_ind]['Archive_QD_Score'] = Archive_QD_Score
-
-
-
-
-
-        with open(f"{final_results_folder}/paper_results/{env}/diffusion_model/experiments_dict.json", 'w') as f:
-            json.dump(experiments_dict_cpy, f, indent=4)
+        # save the figure
+        fig.savefig(f"{final_results_folder}/{paper_results_folder}/{env}/diffusion_model/cdf.png")
