@@ -413,7 +413,7 @@ def evaluate_measure_distance_cvt():
 
 def get_results_dataframe(env_name: str, keywords: list[str], name=None):
     runs = api.runs('qdrl/policy_diffusion', filters={
-        "$and": [{'tags': 'final_diffusion_2'}]
+        "$and": [{'tags': 'final2'}, {'tags': 'final'}]
     })
 
     keys = ['Behavior/js_div', 'Behavior/reward_ratio', 'epoch']
@@ -436,7 +436,7 @@ def get_results_dataframe(env_name: str, keywords: list[str], name=None):
                 # hist = run.history(keys=keys)
                 hist.to_csv(str(cached_data_path))
 
-            hist['env_name'] = env_name
+            hist['name'] = env_name if name is None else name
             hist_list.append(hist)
 
     df = pd.concat(hist_list, ignore_index=True)
@@ -472,6 +472,29 @@ def plot_reward_ratio_and_js_div():
     plt.show()
 
 
+def plot_kl_ablation():
+    fig, axs = plt.subplots(2, 1, figsize=(11, 9))
+
+    keywords_list = [['1.0'], ['1e-2'], ['1e-4'], ['1e-6']]
+
+    all_data = []
+    for k in keywords_list:
+        df = get_results_dataframe('humanoid', k, name=k[0])
+        all_data.append(df)
+
+    all_data = pd.concat(all_data, ignore_index=True).sort_values(by='epoch')
+    sns.lineplot(x='epoch', y='Behavior/reward_ratio', errorbar='sd', data=all_data, ax=axs[0], hue='name')
+    sns.lineplot(x='epoch', y='Behavior/js_div', errorbar='sd', data=all_data, ax=axs[1], hue='name')
+
+    axs[0].set_title('KL Hyperparameter Search')
+    axs[1].set_xlabel('Epoch')
+    axs[0].set_ylabel('Reward Ratio')
+    axs[1].set_ylabel('JS Divergence')
+    fig.tight_layout()
+    plt.show()
+
+
+
 if __name__ == '__main__':
     archive_df_path = '/home/sumeet/QDPPO/experiments/ppga_halfcheetah_adaptive_stddev_no_obs_norm/1111/checkpoints/' \
                       'cp_00001990/archive_df_00001990.pkl'
@@ -481,4 +504,4 @@ if __name__ == '__main__':
     env_name = 'halfcheetah'
 
     # evaluate_vae_subsample(env_name, archive_df_path, model_path)
-    plot_reward_ratio_and_js_div()
+    plot_kl_ablation()
