@@ -9,3 +9,4 @@ data*/
 runs
 tmp*
 *log.txt*
+.cache/

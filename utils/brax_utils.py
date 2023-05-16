@@ -22,7 +22,8 @@ shared_params = OrderedDict({
                 'env_name': 'walker2d',
                 'num_dims': 2,
                 'episode_length': 1000,
-                'grid_size': 100
+                'grid_size': 100,
+                'clip_obs_rew': True
             }
         },
     'halfcheetah':
@@ -38,7 +39,8 @@ shared_params = OrderedDict({
                 'env_name': 'halfcheetah',
                 'num_dims': 2,
                 'episode_length': 1000,
-                'grid_size': 100
+                'grid_size': 100,
+                'clip_obs_rew': True
             }
         },
     'humanoid':
@@ -54,7 +56,8 @@ shared_params = OrderedDict({
                 'env_name': 'humanoid',
                 'num_dims': 2,
                 'episode_length': 1000,
-                'grid_size': 100
+                'grid_size': 100,
+                'clip_obs_rew': True
             }
         },
     'ant':
@@ -71,6 +74,7 @@ shared_params = OrderedDict({
                 'num_dims': 4,
                 'episode_length': 1000,
                 'grid_size': 10,
+                'clip_obs_rew': True
             }
         }
 })
