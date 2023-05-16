@@ -175,6 +175,7 @@ def shaped_elites_dataset_factory(env_name,
                                   weight_normalizer: Optional[WeightNormalizer] = None,
                                   use_language: bool = False,
                                   results_folder = "results",
+                                  N=-1,
                                   cut_out = False,):
     archive_data_path = f'data/{env_name}'
     archive_dfs = []
@@ -193,6 +194,10 @@ def shaped_elites_dataset_factory(env_name,
                     ~((archive_df['measure_0'] > 0.2) & (archive_df['measure_1'] > 0.2)
                     & (archive_df['measure_0'] < 0.6) & (archive_df['measure_1'] < 0.6))]
                 print(f'Cut out {ln_before_cut - len(archive_df)} elites')
+
+            if N != -1:
+                archive_df = archive_df.sample(N)
+
 
             archive_dfs.append(archive_df)
 

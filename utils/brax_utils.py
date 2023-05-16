@@ -13,7 +13,7 @@ shared_params = OrderedDict({
         {
             'objective_range': (0, 5000),
             'objective_resolution': 100,
-            'archive_resolution': 2500,
+            'archive_resolution': 10000,
             'skip_len': 200,
             'algorithm_name': 'cma_mae_100_0.01',
             'obs_dim': 17,
@@ -29,7 +29,7 @@ shared_params = OrderedDict({
         {
             'objective_range': (0, 9000),
             'objective_resolution': 100,
-            'archive_resolution': 2500,
+            'archive_resolution': 10000,
             'skip_len': 200,
             'algorithm_name': 'cma_mae_100_0.01',
             'obs_dim': 18,
@@ -45,7 +45,7 @@ shared_params = OrderedDict({
         {
             'objective_range': (0, 10000),
             'objective_resolution': 100,
-            'archive_resolution': 2500,
+            'archive_resolution': 10000,
             'skip_len': 200,
             'algorithm_name': 'cma_mae_100_0.01',
             'obs_dim': 227,
