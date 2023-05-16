@@ -17,6 +17,8 @@ matplotlib.rcParams.update(
 matplotlib.rcParams["pdf.fonttype"] = 42
 matplotlib.rcParams["ps.fonttype"] = 42
 
+# matplotlib.rcParams.update(matplotlib.rcParamsDefault)
+
 if __name__ == '__main__':
 
     envs = [("halfcheetah", False), ("ant", True), ("walker2d", False), ("humanoid", True),] #["halfcheetah", "ant", "walker2d", "humanoid"]
@@ -27,10 +29,17 @@ if __name__ == '__main__':
     Num = 5000
 
     for env, centering in envs:
+        base_cfg = AttrDict(shared_params[env])
+        base_cfg['title'] = env
+
+        cfg = copy.copy(base_cfg)
+        cfg.update({'archive_dir': None, 'algorithm': "policy_diffusion"})    
+        
         # check if original archive exists
         existing_original_archive = f'/home/shashank/research/qd/paper_results2_without_averaging/{env}/diffusion_model/cdf_original.csv'
         if os.path.exists(existing_original_archive):
             orig_cdf = pd.read_csv(existing_original_archive)
+            print('Original Archive Exists')
         
         else:
             weight_normalizer = None
@@ -67,11 +76,6 @@ if __name__ == '__main__':
                 original_archive,
                 average=False)
 
-            base_cfg = AttrDict(shared_params[env])
-            base_cfg['title'] = env
-
-            cfg = copy.copy(base_cfg)
-            cfg.update({'archive_dir': None, 'algorithm': "policy_diffusion"})    
             orig_cdf = compile_cdf(cfg, dataframes=[archive_info["Archive"]])
 
             # save the orig_cdf dataframe to csv

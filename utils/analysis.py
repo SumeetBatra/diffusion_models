@@ -490,6 +490,12 @@ def plot_kl_ablation():
     axs[1].set_xlabel('Epoch')
     axs[0].set_ylabel('Reward Ratio')
     axs[1].set_ylabel('JS Divergence')
+    # make y axis log scale for JS divergence
+    axs[1].set_yscale('log')
+
+    # set x axis max to 800
+    axs[0].set_xlim(0, 800)
+    axs[1].set_xlim(0, 800)
     fig.tight_layout()
     plt.show()
 
