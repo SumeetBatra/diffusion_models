@@ -4,6 +4,15 @@ import numpy as np
 import pickle
 import os
 import json
+import matplotlib
+matplotlib.rcParams.update(
+    {
+        "figure.dpi": 150,
+        "font.size": 20,
+    }
+)
+matplotlib.rcParams["pdf.fonttype"] = 42
+matplotlib.rcParams["ps.fonttype"] = 42
 import matplotlib.pyplot as plt
 import wandb
 import pandas as pd
@@ -473,7 +482,7 @@ def plot_reward_ratio_and_js_div():
 
 
 def plot_kl_ablation():
-    fig, axs = plt.subplots(2, 1, figsize=(11, 9))
+    fig, axs = plt.subplots(1, 2, figsize=(21, 5))
 
     keywords_list = [['1.0'], ['1e-2'], ['1e-4'], ['1e-6']]
 
@@ -483,13 +492,16 @@ def plot_kl_ablation():
         all_data.append(df)
 
     all_data = pd.concat(all_data, ignore_index=True).sort_values(by='epoch')
-    sns.lineplot(x='epoch', y='Behavior/reward_ratio', errorbar='sd', data=all_data, ax=axs[0], hue='name')
-    sns.lineplot(x='epoch', y='Behavior/js_div', errorbar='sd', data=all_data, ax=axs[1], hue='name')
+    # rename the 'name' column to 'kl coeff'
+    all_data = all_data.rename(columns={'name': 'KL Coefficient'})
+    sns.lineplot(x='epoch', y='Behavior/reward_ratio', errorbar='sd', data=all_data, ax=axs[0], hue='KL Coefficient')
+    sns.lineplot(x='epoch', y='Behavior/js_div', errorbar='sd', data=all_data, ax=axs[1], hue='KL Coefficient')
 
-    axs[0].set_title('KL Hyperparameter Search')
+    # axs[0].set_title('KL Hyperparameter Search')
     axs[1].set_xlabel('Epoch')
+    axs[0].set_xlabel('Epoch')
     axs[0].set_ylabel('Reward Ratio')
-    axs[1].set_ylabel('JS Divergence')
+    axs[1].set_ylabel('Measure (JS) Divergence')
     # make y axis log scale for JS divergence
     axs[1].set_yscale('log')
 
@@ -497,7 +509,17 @@ def plot_kl_ablation():
     axs[0].set_xlim(0, 800)
     axs[1].set_xlim(0, 800)
     fig.tight_layout()
+
+    # add a title to the figure
+    fig.suptitle('KL Hyperparameter Search', fontsize=20, y=1)
+
+    # # add common legend
+    # handles, labels = axs[0].get_legend_handles_labels()
+    # fig.legend(handles, labels, loc='upper center', ncol=4)
+
     plt.show()
+
+    print("Done")
 
 
 

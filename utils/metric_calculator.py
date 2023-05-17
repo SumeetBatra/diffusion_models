@@ -728,7 +728,7 @@ def reevaluate_ppga_archive_mem(env_cfg: AttrDict,
     # print(f'{all_objs.shape=}, {all_measures.shape=}')
     # Measure_Error_Mean is the 2 norm of the difference between the true measure and the estimated measure
     if average:
-        Measure_Error_Mean = np.linalg.norm(true_measures - all_measures, axis=1, ord=env_cfg.num_dims).mean()
+        Measure_Error_Mean = np.linalg.norm(true_measures - all_measures, axis=1).mean()
     else:
         Measure_Error_Mean = 0
 
